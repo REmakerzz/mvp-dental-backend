@@ -52,7 +52,15 @@ func main() {
 	// Запускаем веб-сервер в отдельной горутине
 	go func() {
 		r := gin.Default()
-		r.Use(cors.Default())
+		
+		// Настраиваем CORS
+		config := cors.DefaultConfig()
+		config.AllowAllOrigins = true
+		config.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
+		config.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
+		config.AllowCredentials = true
+		r.Use(cors.New(config))
+
 		r.LoadHTMLGlob("templates/*.html")
 
 		store := cookie.NewStore([]byte("secret"))
@@ -96,29 +104,41 @@ func main() {
 
 		// Публичный API: отправка SMS-кода (заглушка, возвращает код)
 		r.POST("/api/send_sms", func(c *gin.Context) {
+			log.Printf("Received /api/send_sms request")
+			log.Printf("Request headers: %v", c.Request.Header)
+			
 			var req struct {
 				Phone      string `json:"phone"`
 				TelegramID int64  `json:"telegram_id"`
 			}
-			log.Printf("Received request body: %+v", c.Request.Body)
+			
+			body, _ := c.GetRawData()
+			log.Printf("Raw request body: %s", string(body))
+			
 			if err := c.ShouldBindJSON(&req); err != nil {
 				log.Printf("Error binding JSON: %v", err)
 				c.JSON(400, gin.H{"error": "Некорректные данные"})
 				return
 			}
+			
 			log.Printf("Parsed request: phone=%q, telegram_id=%d", req.Phone, req.TelegramID)
+			
 			if req.Phone == "" || req.TelegramID == 0 {
 				log.Printf("Invalid request: phone=%q, telegram_id=%d", req.Phone, req.TelegramID)
 				c.JSON(400, gin.H{"error": "Некорректные данные"})
 				return
 			}
+			
 			log.Printf("Received phone number: %q", req.Phone)
 			if !validatePhone(req.Phone) {
 				log.Printf("Invalid phone number format: %q", req.Phone)
 				c.JSON(400, gin.H{"error": "Некорректный формат номера телефона"})
 				return
 			}
+			
 			code := sendSMSCode(req.Phone, req.TelegramID)
+			log.Printf("Generated SMS code for phone %q: %s", req.Phone, code)
+			
 			c.JSON(200, gin.H{"ok": true, "code": code})
 		})
 
