@@ -2,11 +2,14 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jung-kurt/gofpdf"
 )
 
@@ -202,15 +205,42 @@ func adminExportPDFHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-func adminDeleteBookingHandler(db *sql.DB) gin.HandlerFunc {
+func adminDeleteBookingHandler(db *sql.DB, bot *tgbotapi.BotAPI) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		_, err := db.Exec("DELETE FROM bookings WHERE id = ?", id)
+
+		// Получаем информацию о записи и пользователе перед удалением
+		var telegramID int64
+		var service, date, time string
+		err := db.QueryRow(`
+			SELECT u.telegram_id, s.name, b.date, b.time 
+			FROM bookings b 
+			LEFT JOIN users u ON b.user_id = u.id 
+			LEFT JOIN services s ON b.service_id = s.id 
+			WHERE b.id = ?`, id).Scan(&telegramID, &service, &date, &time)
+
 		if err != nil {
+			log.Printf("Error getting booking info: %v", err)
 			c.String(500, "DB error")
 			return
 		}
+
+		// Удаляем запись
+		_, err = db.Exec("DELETE FROM bookings WHERE id = ?", id)
+		if err != nil {
+			log.Printf("Error deleting booking: %v", err)
+			c.String(500, "DB error")
+			return
+		}
+
+		// Отправляем уведомление клиенту
+		if telegramID != 0 {
+			msg := tgbotapi.NewMessage(telegramID, fmt.Sprintf(
+				"❌ Ваша запись отменена администратором:\nУслуга: %s\nДата: %s\nВремя: %s",
+				service, date, time))
+			bot.Send(msg)
+		}
+
 		c.Redirect(302, "/admin/bookings")
 	}
 }
- 

@@ -100,7 +100,7 @@ func main() {
 		r.GET("/admin/services/edit/:id", adminAuthMiddleware(), adminEditServiceHandler(db))
 		r.POST("/admin/services/edit/:id", adminAuthMiddleware(), adminEditServiceHandler(db))
 		r.POST("/admin/services/delete/:id", adminAuthMiddleware(), adminDeleteServiceHandler(db))
-		r.POST("/admin/bookings/delete/:id", adminAuthMiddleware(), adminDeleteBookingHandler(db))
+		r.POST("/admin/bookings/delete/:id", adminAuthMiddleware(), adminDeleteBookingHandler(db, bot))
 
 		// Публичный API для WebApp: список стоматологических услуг
 		r.GET("/api/services", func(c *gin.Context) {
@@ -353,12 +353,10 @@ func main() {
 }
 
 func sendMainMenu(bot *tgbotapi.BotAPI, chatID int64) {
-	webApp := tgbotapi.WebAppInfo{URL: "https://remakerzz.github.io/mvp-dental-webapp/"}
 	menu := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("Услуги"),
 			tgbotapi.NewKeyboardButton("Записаться"),
-			tgbotapi.NewKeyboardButtonWebApp("Онлайн запись", webApp),
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("Мои записи"),
