@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/nyaruka/phonenumbers"
 )
 

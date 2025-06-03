@@ -14,7 +14,7 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/robfig/cron/v3"
 )
 
@@ -55,18 +55,7 @@ func main() {
 	u.Timeout = 60
 
 	// Пробуем получить обновления с повторными попытками
-	var updates tgbotapi.UpdatesChannel
-	for i := 0; i < 3; i++ {
-		updates, err = bot.GetUpdatesChan(u)
-		if err == nil {
-			break
-		}
-		log.Printf("Failed to get updates (attempt %d): %v", i+1, err)
-		time.Sleep(3 * time.Second)
-	}
-	if err != nil {
-		log.Printf("Failed to get updates after 3 attempts, continuing without bot...")
-	}
+	updates := bot.GetUpdatesChan(u)
 
 	// Используем постоянное хранилище для базы данных
 	dbPath := filepath.Join(os.Getenv("RENDER_DISK_PATH"), "mvp_chatbot.db")
@@ -225,7 +214,7 @@ func main() {
 					idStr := strings.TrimPrefix(data, "cancel_")
 					id, _ := strconv.Atoi(idStr)
 					db.Exec(`UPDATE bookings SET status = 'Отменено' WHERE id = ?`, id)
-					bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Запись отменена"))
+					bot.Request(tgbotapi.NewCallback(update.CallbackQuery.ID, "Запись отменена"))
 					bot.Send(tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Ваша запись отменена."))
 					continue
 				}
@@ -237,7 +226,7 @@ func main() {
 					handleTimeSelection(bot, chatID)
 					state.Step = "time"
 					SetUserState(db, state)
-					bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Дата выбрана"))
+					bot.Request(tgbotapi.NewCallback(update.CallbackQuery.ID, "Дата выбрана"))
 				} else if state != nil && state.Step == "time" {
 					state.Time = update.CallbackQuery.Data
 					msg := tgbotapi.NewMessage(chatID, "Введите ваш номер телефона для подтверждения:")
@@ -245,7 +234,7 @@ func main() {
 					bot.Send(msg)
 					state.Step = "phone"
 					SetUserState(db, state)
-					bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Время выбрано"))
+					bot.Request(tgbotapi.NewCallback(update.CallbackQuery.ID, "Время выбрано"))
 				}
 				continue
 			}
@@ -354,10 +343,12 @@ func main() {
 }
 
 func sendMainMenu(bot *tgbotapi.BotAPI, chatID int64) {
+	webApp := tgbotapi.WebAppInfo{URL: "https://remakerzz.github.io/mvp-dental-webapp/"}
 	menu := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("Услуги"),
 			tgbotapi.NewKeyboardButton("Записаться"),
+			tgbotapi.NewKeyboardButtonWebApp("Онлайн запись", webApp),
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("Мои записи"),
