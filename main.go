@@ -182,6 +182,7 @@ func main() {
 				return
 			}
 			log.Printf("Parsed booking request: %+v", req)
+			log.Printf("userID: %d, serviceID: %d, name: %s, phone: %s, date: %s, time: %s, code: %s", req.TelegramID, req.ServiceID, req.Name, req.Phone, req.Date, req.Time, req.Code)
 			if req.Phone == "" || req.TelegramID == 0 || req.ServiceID == 0 || req.Date == "" || req.Time == "" || req.Code == "" {
 				log.Printf("Invalid request data: phone=%q, telegram_id=%d, service_id=%d, date=%q, time=%q, code=%q",
 					req.Phone, req.TelegramID, req.ServiceID, req.Date, req.Time, req.Code)
@@ -189,13 +190,16 @@ func main() {
 				return
 			}
 			if code, ok := smsCodes[req.TelegramID]; !ok || code != req.Code {
+				log.Printf("Invalid or wrong code: got %q, expected %q", req.Code, smsCodes[req.TelegramID])
 				c.JSON(400, gin.H{"error": "Неверный код"})
 				return
 			}
 			userID := getOrCreateUserID(db, req.TelegramID)
+			log.Printf("Resolved userID: %d", userID)
 			db.Exec(`UPDATE users SET name = ?, phone = ? WHERE id = ?`, req.Name, req.Phone, userID)
 			_, err := db.Exec(`INSERT INTO bookings (user_id, service_id, date, time, status, phone_confirmed) VALUES (?, ?, ?, ?, 'Подтверждено', 1)`, userID, req.ServiceID, req.Date, req.Time)
 			if err != nil {
+				log.Printf("DB error: %v", err)
 				c.JSON(500, gin.H{"error": "Ошибка при сохранении записи"})
 				return
 			}
