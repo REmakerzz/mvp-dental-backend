@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -67,7 +68,12 @@ func main() {
 		log.Printf("Failed to get updates after 3 attempts, continuing without bot...")
 	}
 
-	db := InitDB("mvp_chatbot.db", "migrations.sql")
+	// Используем постоянное хранилище для базы данных
+	dbPath := filepath.Join(os.Getenv("RENDER_DISK_PATH"), "mvp_chatbot.db")
+	if dbPath == "" {
+		dbPath = "mvp_chatbot.db" // Fallback для локальной разработки
+	}
+	db := InitDB(dbPath, "migrations.sql")
 
 	// Запускаем веб-сервер в отдельной горутине
 	go func() {
