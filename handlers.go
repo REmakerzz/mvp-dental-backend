@@ -2,10 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
-	"time"
+	"net/http"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/nyaruka/phonenumbers"
@@ -51,40 +52,64 @@ func getStomatologyServices(db *sql.DB) []string {
 	return names
 }
 
-func makeDateInlineKeyboard() tgbotapi.InlineKeyboardMarkup {
-	var rows [][]tgbotapi.InlineKeyboardButton
-	now := time.Now()
-	for i := 0; i < 7; i++ {
-		d := now.AddDate(0, 0, i)
-		btn := tgbotapi.NewInlineKeyboardButtonData(d.Format("02.01.2006"), d.Format("2006-01-02"))
-		rows = append(rows, tgbotapi.NewInlineKeyboardRow(btn))
-	}
-	return tgbotapi.NewInlineKeyboardMarkup(rows...)
-}
-
 func handleDateSelection(bot *tgbotapi.BotAPI, chatID int64) {
+	// Получаем доступные даты
+	resp, err := http.Get("https://mvp-dental-backend.onrender.com/api/available_dates")
+	if err != nil {
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении доступных дат")
+		bot.Send(msg)
+		return
+	}
+	defer resp.Body.Close()
+
+	var dates []string
+	if err := json.NewDecoder(resp.Body).Decode(&dates); err != nil {
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при обработке дат")
+		bot.Send(msg)
+		return
+	}
+
+	// Создаем клавиатуру с датами
+	var keyboard [][]tgbotapi.InlineKeyboardButton
+	for _, date := range dates {
+		keyboard = append(keyboard, []tgbotapi.InlineKeyboardButton{
+			tgbotapi.NewInlineKeyboardButtonData(date, date),
+		})
+	}
+
 	msg := tgbotapi.NewMessage(chatID, "Выберите дату:")
-	msg.ReplyMarkup = makeDateInlineKeyboard()
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(keyboard...)
 	addCancelHint(&msg)
 	bot.Send(msg)
 }
 
-func makeTimeInlineKeyboard() tgbotapi.InlineKeyboardMarkup {
-	var rows [][]tgbotapi.InlineKeyboardButton
-	for h := 9; h < 18; h++ {
-		row := []tgbotapi.InlineKeyboardButton{}
-		for m := 0; m < 60; m += 30 {
-			t := fmt.Sprintf("%02d:%02d", h, m)
-			row = append(row, tgbotapi.NewInlineKeyboardButtonData(t, t))
-		}
-		rows = append(rows, tgbotapi.NewInlineKeyboardRow(row...))
+func handleTimeSelection(bot *tgbotapi.BotAPI, chatID int64, date string) {
+	// Получаем доступное время
+	resp, err := http.Get(fmt.Sprintf("https://mvp-dental-backend.onrender.com/api/available_times?date=%s", date))
+	if err != nil {
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении доступного времени")
+		bot.Send(msg)
+		return
 	}
-	return tgbotapi.NewInlineKeyboardMarkup(rows...)
-}
+	defer resp.Body.Close()
 
-func handleTimeSelection(bot *tgbotapi.BotAPI, chatID int64) {
+	var times []string
+	if err := json.NewDecoder(resp.Body).Decode(&times); err != nil {
+		msg := tgbotapi.NewMessage(chatID, "Ошибка при обработке времени")
+		bot.Send(msg)
+		return
+	}
+
+	// Создаем клавиатуру со временем
+	var keyboard [][]tgbotapi.InlineKeyboardButton
+	for _, time := range times {
+		keyboard = append(keyboard, []tgbotapi.InlineKeyboardButton{
+			tgbotapi.NewInlineKeyboardButtonData(time, time),
+		})
+	}
+
 	msg := tgbotapi.NewMessage(chatID, "Выберите время:")
-	msg.ReplyMarkup = makeTimeInlineKeyboard()
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(keyboard...)
 	addCancelHint(&msg)
 	bot.Send(msg)
 }
