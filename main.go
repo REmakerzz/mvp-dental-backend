@@ -58,7 +58,7 @@ func main() {
 	updates := bot.GetUpdatesChan(u)
 
 	// Используем постоянное хранилище для базы данных
-	dbPath := filepath.Join(os.Getenv("RENDER_DISK_PATH"), "mvp_chatbot.db")
+	dbPath := filepath.Join("/data", "mvp_chatbot.db")
 	if dbPath == "" {
 		dbPath = "mvp_chatbot.db" // Fallback для локальной разработки
 	}
@@ -122,6 +122,7 @@ func main() {
 		r.POST("/api/send_sms", func(c *gin.Context) {
 			log.Printf("Received /api/send_sms request")
 			log.Printf("Request headers: %v", c.Request.Header)
+			log.Printf("Request body: %v", c.Request.Body)
 
 			var req struct {
 				Phone      string `json:"phone"`
