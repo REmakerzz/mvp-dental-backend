@@ -128,6 +128,59 @@ func main() {
 			c.JSON(200, services)
 		})
 
+		// Публичный API: получение доступных дат
+		r.GET("/api/available_dates", func(c *gin.Context) {
+			// Получаем даты на следующие 14 дней
+			var dates []string
+			for i := 0; i < 14; i++ {
+				date := time.Now().AddDate(0, 0, i)
+				// Пропускаем выходные
+				if date.Weekday() != time.Sunday && date.Weekday() != time.Saturday {
+					dates = append(dates, date.Format("2006-01-02"))
+				}
+			}
+			c.JSON(200, dates)
+		})
+
+		// Публичный API: получение доступного времени на конкретную дату
+		r.GET("/api/available_times", func(c *gin.Context) {
+			date := c.Query("date")
+			if date == "" {
+				c.JSON(400, gin.H{"error": "Date is required"})
+				return
+			}
+
+			// Получаем все записи на эту дату
+			rows, err := db.Query(`SELECT time FROM bookings WHERE date = ? AND status != 'Отменено'`, date)
+			if err != nil {
+				c.JSON(500, gin.H{"error": "DB error"})
+				return
+			}
+			defer rows.Close()
+
+			// Собираем занятое время
+			bookedTimes := make(map[string]bool)
+			for rows.Next() {
+				var time string
+				rows.Scan(&time)
+				bookedTimes[time] = true
+			}
+
+			// Генерируем доступное время (с 9:00 до 18:00, с интервалом в 30 минут)
+			var availableTimes []string
+			startTime := time.Date(2000, 1, 1, 9, 0, 0, 0, time.UTC)
+			endTime := time.Date(2000, 1, 1, 18, 0, 0, 0, time.UTC)
+
+			for t := startTime; t.Before(endTime); t = t.Add(30 * time.Minute) {
+				timeStr := t.Format("15:04")
+				if !bookedTimes[timeStr] {
+					availableTimes = append(availableTimes, timeStr)
+				}
+			}
+
+			c.JSON(200, availableTimes)
+		})
+
 		// Публичный API: отправка SMS-кода (заглушка, возвращает код)
 		r.POST("/api/send_sms", func(c *gin.Context) {
 			log.Printf("Received /api/send_sms request")
@@ -241,7 +294,7 @@ func main() {
 				state, _ := GetUserState(db, int64(userID))
 				if state != nil && state.Step == "date" {
 					state.Date = update.CallbackQuery.Data
-					handleTimeSelection(bot, chatID)
+					handleTimeSelection(bot, chatID, state.Date)
 					state.Step = "time"
 					SetUserState(db, state)
 					bot.Request(tgbotapi.NewCallback(update.CallbackQuery.ID, "Дата выбрана"))
@@ -305,7 +358,7 @@ func main() {
 					SetUserState(db, state)
 				case "date":
 					state.Date = update.Message.Text
-					handleTimeSelection(bot, chatID)
+					handleTimeSelection(bot, chatID, state.Date)
 					state.Step = "time"
 					SetUserState(db, state)
 				case "time":

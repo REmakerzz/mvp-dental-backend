@@ -2,11 +2,10 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
-	"net/http"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/nyaruka/phonenumbers"
@@ -53,20 +52,15 @@ func getStomatologyServices(db *sql.DB) []string {
 }
 
 func handleDateSelection(bot *tgbotapi.BotAPI, chatID int64) {
-	// Получаем доступные даты
-	resp, err := http.Get("https://mvp-dental-backend.onrender.com/api/available_dates")
-	if err != nil {
-		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении доступных дат")
-		bot.Send(msg)
-		return
-	}
-	defer resp.Body.Close()
-
+	// Генерируем даты на следующие 14 дней
 	var dates []string
-	if err := json.NewDecoder(resp.Body).Decode(&dates); err != nil {
-		msg := tgbotapi.NewMessage(chatID, "Ошибка при обработке дат")
-		bot.Send(msg)
-		return
+	now := time.Now()
+	for i := 0; i < 14; i++ {
+		date := now.AddDate(0, 0, i)
+		// Пропускаем выходные
+		if date.Weekday() != time.Sunday && date.Weekday() != time.Saturday {
+			dates = append(dates, date.Format("2006-01-02"))
+		}
 	}
 
 	// Создаем клавиатуру с датами
@@ -84,25 +78,19 @@ func handleDateSelection(bot *tgbotapi.BotAPI, chatID int64) {
 }
 
 func handleTimeSelection(bot *tgbotapi.BotAPI, chatID int64, date string) {
-	// Получаем доступное время
-	resp, err := http.Get(fmt.Sprintf("https://mvp-dental-backend.onrender.com/api/available_times?date=%s", date))
-	if err != nil {
-		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении доступного времени")
-		bot.Send(msg)
-		return
-	}
-	defer resp.Body.Close()
+	// Генерируем доступное время (с 9:00 до 18:00, с интервалом в 30 минут)
+	var availableTimes []string
+	startTime := time.Date(2000, 1, 1, 9, 0, 0, 0, time.UTC)
+	endTime := time.Date(2000, 1, 1, 18, 0, 0, 0, time.UTC)
 
-	var times []string
-	if err := json.NewDecoder(resp.Body).Decode(&times); err != nil {
-		msg := tgbotapi.NewMessage(chatID, "Ошибка при обработке времени")
-		bot.Send(msg)
-		return
+	for t := startTime; t.Before(endTime); t = t.Add(30 * time.Minute) {
+		timeStr := t.Format("15:04")
+		availableTimes = append(availableTimes, timeStr)
 	}
 
 	// Создаем клавиатуру со временем
 	var keyboard [][]tgbotapi.InlineKeyboardButton
-	for _, time := range times {
+	for _, time := range availableTimes {
 		keyboard = append(keyboard, []tgbotapi.InlineKeyboardButton{
 			tgbotapi.NewInlineKeyboardButtonData(time, time),
 		})
