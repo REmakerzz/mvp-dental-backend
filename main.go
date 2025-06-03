@@ -58,13 +58,9 @@ func main() {
 	updates := bot.GetUpdatesChan(u)
 
 	// Используем постоянное хранилище для базы данных
-	dbPath := filepath.Join("/data", "mvp_chatbot.db")
+	dbPath := filepath.Join(os.Getenv("RENDER_DISK_PATH"), "mvp_chatbot.db")
 	if dbPath == "" {
 		dbPath = "mvp_chatbot.db" // Fallback для локальной разработки
-	}
-	// Создаем директорию /data если её нет
-	if err := os.MkdirAll("/data", 0755); err != nil {
-		log.Printf("Warning: failed to create /data directory: %v", err)
 	}
 	log.Printf("Using database at: %s", dbPath)
 	db := InitDB(dbPath, "migrations.sql")
