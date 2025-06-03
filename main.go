@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,7 +29,19 @@ func isPortInUse(port string) bool {
 }
 
 func main() {
-	// Проверяем, не запущен ли уже экземпляр приложения
+	// Создаем файл блокировки
+	lockFile := "bot.lock"
+
+	// Пытаемся создать файл блокировки
+	lock, err := os.OpenFile(lockFile, os.O_CREATE|os.O_EXCL, 0666)
+	if err != nil {
+		log.Printf("Another instance is already running (lock file exists)")
+		return
+	}
+	defer os.Remove(lockFile) // Удаляем файл блокировки при завершении
+	defer lock.Close()
+
+	// Проверяем порт
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -59,11 +70,8 @@ func main() {
 	// Пробуем получить обновления с повторными попытками
 	updates := bot.GetUpdatesChan(u)
 
-	// Используем постоянное хранилище для базы данных
-	dbPath := filepath.Join(os.Getenv("RENDER_DISK_PATH"), "mvp_chatbot.db")
-	if dbPath == "" {
-		dbPath = "mvp_chatbot.db" // Fallback для локальной разработки
-	}
+	// Используем локальную базу данных
+	dbPath := "mvp_chatbot.db"
 	log.Printf("Using database at: %s", dbPath)
 	db := InitDB(dbPath, "migrations.sql")
 
