@@ -33,7 +33,19 @@ func main() {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
-	updates, err := bot.GetUpdatesChan(u)
+	// Пробуем получить обновления с повторными попытками
+	var updates tgbotapi.UpdatesChannel
+	for i := 0; i < 3; i++ {
+		updates, err = bot.GetUpdatesChan(u)
+		if err == nil {
+			break
+		}
+		log.Printf("Failed to get updates (attempt %d): %v", i+1, err)
+		time.Sleep(3 * time.Second)
+	}
+	if err != nil {
+		log.Printf("Failed to get updates after 3 attempts, continuing without bot...")
+	}
 
 	db := InitDB("mvp_chatbot.db", "migrations.sql")
 
@@ -45,6 +57,11 @@ func main() {
 
 		store := cookie.NewStore([]byte("secret"))
 		r.Use(sessions.Sessions("adminsession", store))
+
+		// Редирект с корневого пути на админку
+		r.GET("/", func(c *gin.Context) {
+			c.Redirect(302, "/admin/login")
+		})
 
 		// Админка
 		r.GET("/admin/login", adminLoginHandler())
@@ -158,136 +175,140 @@ func main() {
 
 	startAutoCancelCron(db)
 
-	for update := range updates {
-
-		if update.CallbackQuery != nil {
-			data := update.CallbackQuery.Data
-			if strings.HasPrefix(data, "cancel_") {
-				idStr := strings.TrimPrefix(data, "cancel_")
-				id, _ := strconv.Atoi(idStr)
-				db.Exec(`UPDATE bookings SET status = 'Отменено' WHERE id = ?`, id)
-				bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Запись отменена"))
-				bot.Send(tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Ваша запись отменена."))
-				continue
-			}
-			userID := update.CallbackQuery.From.ID
-			chatID := update.CallbackQuery.Message.Chat.ID
-			state, _ := GetUserState(db, int64(userID))
-			if state != nil && state.Step == "date" {
-				state.Date = update.CallbackQuery.Data
-				handleTimeSelection(bot, chatID)
-				state.Step = "time"
-				SetUserState(db, state)
-				bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Дата выбрана"))
-			} else if state != nil && state.Step == "time" {
-				state.Time = update.CallbackQuery.Data
-				msg := tgbotapi.NewMessage(chatID, "Введите ваш номер телефона для подтверждения:")
-				addCancelHint(&msg)
-				bot.Send(msg)
-				state.Step = "phone"
-				SetUserState(db, state)
-				bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Время выбрано"))
-			}
-			continue
-		}
-
-		if update.Message == nil { // ignore non-Message updates
-			continue
-		}
-
-		chatID := update.Message.Chat.ID
-		userID := update.Message.From.ID
-
-		if update.Message.IsCommand() {
-			switch update.Message.Command() {
-			case "start":
-				sendMainMenu(bot, chatID)
-			case "cancel":
-				ClearUserState(db, int64(userID))
-				handleCancelBooking(bot, chatID)
-			}
-			continue
-		}
-
-		if update.Message.Text == "Записаться" {
-			ClearUserState(db, int64(userID))
-			handleBooking(bot, chatID, db)
-			SetUserState(db, &UserState{TelegramID: int64(userID), Step: "service"})
-			continue
-		}
-		if update.Message.Text == "Услуги" {
-			handleServices(bot, chatID, db)
-			continue
-		}
-		if update.Message.Text == "Контакты" {
-			handleContacts(bot, chatID)
-			continue
-		}
-		if update.Message.Text == "Мои записи" {
-			handleMyBookings(bot, chatID, db, int64(userID))
-			continue
-		}
-
-		// Пошаговый сценарий записи
-		state, _ := GetUserState(db, int64(userID))
-		if state != nil {
-			switch state.Step {
-			case "service":
-				state.Service = update.Message.Text
-				handleDateSelection(bot, chatID)
-				state.Step = "date"
-				SetUserState(db, state)
-			case "date":
-				state.Date = update.Message.Text
-				handleTimeSelection(bot, chatID)
-				state.Step = "time"
-				SetUserState(db, state)
-			case "time":
-				state.Time = update.Message.Text
-				msg := tgbotapi.NewMessage(chatID, "Введите ваш номер телефона для подтверждения:")
-				bot.Send(msg)
-				state.Step = "phone"
-				SetUserState(db, state)
-			case "phone":
-				if !validatePhone(update.Message.Text) {
-					msg := tgbotapi.NewMessage(chatID, "Некорректный номер. Введите еще раз:")
-					bot.Send(msg)
+	// Обработка обновлений бота только если канал успешно создан
+	if updates != nil {
+		for update := range updates {
+			if update.CallbackQuery != nil {
+				data := update.CallbackQuery.Data
+				if strings.HasPrefix(data, "cancel_") {
+					idStr := strings.TrimPrefix(data, "cancel_")
+					id, _ := strconv.Atoi(idStr)
+					db.Exec(`UPDATE bookings SET status = 'Отменено' WHERE id = ?`, id)
+					bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Запись отменена"))
+					bot.Send(tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Ваша запись отменена."))
 					continue
 				}
-				state.Phone = update.Message.Text
-				handleSMSConfirmation(bot, chatID, state.Phone, int64(userID))
-				state.Step = "sms"
-				SetUserState(db, state)
-			case "sms":
-				if update.Message.Text != smsCodes[int64(userID)] {
-					msg := tgbotapi.NewMessage(chatID, "Неверный код. Попробуйте еще раз:")
+				userID := update.CallbackQuery.From.ID
+				chatID := update.CallbackQuery.Message.Chat.ID
+				state, _ := GetUserState(db, int64(userID))
+				if state != nil && state.Step == "date" {
+					state.Date = update.CallbackQuery.Data
+					handleTimeSelection(bot, chatID)
+					state.Step = "time"
+					SetUserState(db, state)
+					bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Дата выбрана"))
+				} else if state != nil && state.Step == "time" {
+					state.Time = update.CallbackQuery.Data
+					msg := tgbotapi.NewMessage(chatID, "Введите ваш номер телефона для подтверждения:")
 					addCancelHint(&msg)
 					bot.Send(msg)
-					continue
+					state.Step = "phone"
+					SetUserState(db, state)
+					bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Время выбрано"))
 				}
-				// Сохраняем запись в bookings
-				userIDVal := getOrCreateUserID(db, int64(userID))
-				// Обновляем имя и телефон пользователя
-				db.Exec(`UPDATE users SET name = ?, phone = ? WHERE id = ?`, update.Message.From.FirstName, state.Phone, userIDVal)
-				_, err := db.Exec(`INSERT INTO bookings (user_id, service_id, date, time, status, phone_confirmed) VALUES (?, (SELECT id FROM services WHERE name = ?), ?, ?, 'Подтверждено', 1)`,
-					userIDVal, state.Service, state.Date, state.Time)
-				if err != nil {
-					msg := tgbotapi.NewMessage(chatID, "Ошибка при сохранении записи. Попробуйте позже.")
-					bot.Send(msg)
-				} else {
-					handleBookingConfirmed(bot, chatID)
-					// Push-уведомление админам
-					admins, _ := GetAdminTelegramIDs(db)
-					for _, adminID := range admins {
-						msg := tgbotapi.NewMessage(adminID, "Новая запись: "+state.Service+", "+state.Date+" "+state.Time+", клиент: "+state.Phone)
-						bot.Send(msg)
-					}
+				continue
+			}
+
+			if update.Message == nil { // ignore non-Message updates
+				continue
+			}
+
+			chatID := update.Message.Chat.ID
+			userID := update.Message.From.ID
+
+			if update.Message.IsCommand() {
+				switch update.Message.Command() {
+				case "start":
+					sendMainMenu(bot, chatID)
+				case "cancel":
+					ClearUserState(db, int64(userID))
+					handleCancelBooking(bot, chatID)
 				}
-				delete(smsCodes, int64(userID))
+				continue
+			}
+
+			if update.Message.Text == "Записаться" {
 				ClearUserState(db, int64(userID))
+				handleBooking(bot, chatID, db)
+				SetUserState(db, &UserState{TelegramID: int64(userID), Step: "service"})
+				continue
+			}
+			if update.Message.Text == "Услуги" {
+				handleServices(bot, chatID, db)
+				continue
+			}
+			if update.Message.Text == "Контакты" {
+				handleContacts(bot, chatID)
+				continue
+			}
+			if update.Message.Text == "Мои записи" {
+				handleMyBookings(bot, chatID, db, int64(userID))
+				continue
+			}
+
+			// Пошаговый сценарий записи
+			state, _ := GetUserState(db, int64(userID))
+			if state != nil {
+				switch state.Step {
+				case "service":
+					state.Service = update.Message.Text
+					handleDateSelection(bot, chatID)
+					state.Step = "date"
+					SetUserState(db, state)
+				case "date":
+					state.Date = update.Message.Text
+					handleTimeSelection(bot, chatID)
+					state.Step = "time"
+					SetUserState(db, state)
+				case "time":
+					state.Time = update.Message.Text
+					msg := tgbotapi.NewMessage(chatID, "Введите ваш номер телефона для подтверждения:")
+					bot.Send(msg)
+					state.Step = "phone"
+					SetUserState(db, state)
+				case "phone":
+					if !validatePhone(update.Message.Text) {
+						msg := tgbotapi.NewMessage(chatID, "Некорректный номер. Введите еще раз:")
+						bot.Send(msg)
+						continue
+					}
+					state.Phone = update.Message.Text
+					handleSMSConfirmation(bot, chatID, state.Phone, int64(userID))
+					state.Step = "sms"
+					SetUserState(db, state)
+				case "sms":
+					if update.Message.Text != smsCodes[int64(userID)] {
+						msg := tgbotapi.NewMessage(chatID, "Неверный код. Попробуйте еще раз:")
+						addCancelHint(&msg)
+						bot.Send(msg)
+						continue
+					}
+					// Сохраняем запись в bookings
+					userIDVal := getOrCreateUserID(db, int64(userID))
+					// Обновляем имя и телефон пользователя
+					db.Exec(`UPDATE users SET name = ?, phone = ? WHERE id = ?`, update.Message.From.FirstName, state.Phone, userIDVal)
+					_, err := db.Exec(`INSERT INTO bookings (user_id, service_id, date, time, status, phone_confirmed) VALUES (?, (SELECT id FROM services WHERE name = ?), ?, ?, 'Подтверждено', 1)`,
+						userIDVal, state.Service, state.Date, state.Time)
+					if err != nil {
+						msg := tgbotapi.NewMessage(chatID, "Ошибка при сохранении записи. Попробуйте позже.")
+						bot.Send(msg)
+					} else {
+						handleBookingConfirmed(bot, chatID)
+						// Push-уведомление админам
+						admins, _ := GetAdminTelegramIDs(db)
+						for _, adminID := range admins {
+							msg := tgbotapi.NewMessage(adminID, "Новая запись: "+state.Service+", "+state.Date+" "+state.Time+", клиент: "+state.Phone)
+							bot.Send(msg)
+						}
+					}
+					delete(smsCodes, int64(userID))
+					ClearUserState(db, int64(userID))
+				}
 			}
 		}
-
+	} else {
+		// Если бот не работает, просто держим сервер запущенным
+		select {}
 	}
 }
 
