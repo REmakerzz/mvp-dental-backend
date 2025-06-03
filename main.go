@@ -59,6 +59,12 @@ func main() {
 	// Пробуем получить обновления с повторными попытками
 	updates := bot.GetUpdatesChan(u)
 
+	// Создаём директорию для БД, если нужно
+	if dbDir := os.Getenv("RENDER_DISK_PATH"); dbDir != "" {
+		if err := os.MkdirAll(dbDir, 0755); err != nil {
+			log.Fatalf("failed to create db dir: %v", err)
+		}
+	}
 	// Используем постоянное хранилище для базы данных
 	dbPath := filepath.Join(os.Getenv("RENDER_DISK_PATH"), "mvp_chatbot.db")
 	if dbPath == "" {
