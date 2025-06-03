@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Услуги - Админка</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f7f7f7; margin: 0; }
+        .container { max-width: 800px; margin: 40px auto; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px #0001; padding: 32px; }
+        h1 { margin-top: 0; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
+        th, td { border: 1px solid #e0e0e0; padding: 10px 12px; text-align: left; }
+        th { background: #f0f0f0; }
+        tr:nth-child(even) { background: #fafafa; }
+        .actions { display: flex; gap: 8px; }
+        .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 15px; }
+        .btn-edit { background: #1976d2; color: #fff; }
+        .btn-delete { background: #e53935; color: #fff; }
+        .btn-add { background: #43a047; color: #fff; margin-top: 8px; }
+        form { margin: 0; }
+        input, select { padding: 7px 10px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 10px; font-size: 15px; width: 100%; box-sizing: border-box; }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+        .nav { display: flex; gap: 16px; margin-bottom: 24px; }
+        .nav a { text-decoration: none; color: #1976d2; font-weight: 500; padding: 6px 14px; border-radius: 4px; transition: background .2s; }
+        .nav a.active, .nav a:hover { background: #e3f2fd; }
+        .logout { color: #e53935 !important; font-weight: bold; }
+        .pdf { color: #43a047 !important; }
+        @media (max-width: 600px) {
+            .container { padding: 10px; }
+            table, th, td { font-size: 13px; }
+            .nav { flex-direction: column; gap: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav">
+            <a href="/admin/bookings">Записи</a>
+            <a href="/admin/services" class="active">Услуги</a>
+            <a href="/admin/export_pdf" class="pdf" target="_blank">Экспорт в PDF</a>
+            <a href="/admin/logout" class="logout" style="margin-left:auto;">Выйти</a>
+        </div>
+        <h1>Услуги</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Название</th>
+                    <th>Категория</th>
+                    <th>Длительность</th>
+                    <th>Цена</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+            {{range .services}}
+                <tr>
+                    <td>{{.ID}}</td>
+                    <td>{{.Name}}</td>
+                    <td>{{.Category}}</td>
+                    <td>{{.Duration}} мин</td>
+                    <td>{{.Price}} ₽</td>
+                    <td class="actions">
+                        <a href="/admin/services/edit/{{.ID}}" class="btn btn-edit">✏️</a>
+                        <form method="post" action="/admin/services/delete/{{.ID}}" style="display:inline;" onsubmit="return confirm('Удалить услугу?');">
+                            <button type="submit" class="btn btn-delete">🗑️</button>
+                        </form>
+                    </td>
+                </tr>
+            {{else}}
+                <tr><td colspan="6">Нет услуг</td></tr>
+            {{end}}
+            </tbody>
+        </table>
+        <form method="post" style="background:#f9f9f9; border-radius:8px; padding:18px 16px 8px 16px; box-shadow:0 1px 3px #0001;">
+            <h3 style="margin-top:0;">Добавить услугу</h3>
+            <input type="text" name="name" placeholder="Название" required>
+            <select name="category" required>
+                <option value="Стоматология">Стоматология</option>
+            </select>
+            <input type="number" name="duration" placeholder="Длительность (мин)" required>
+            <input type="number" name="price" placeholder="Цена" required>
+            <button type="submit" class="btn btn-add">Добавить</button>
+        </form>
+    </div>
+</body>
+</html> 

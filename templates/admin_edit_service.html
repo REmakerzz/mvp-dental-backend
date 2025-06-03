@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Редактировать услугу</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f7f7f7; margin: 0; }
+        .container { max-width: 400px; margin: 40px auto; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px #0001; padding: 32px; }
+        h2 { margin-top: 0; }
+        input, select { width: 100%; margin-bottom: 12px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 15px; }
+        .btn { padding: 7px 16px; border: none; border-radius: 4px; background: #1976d2; color: #fff; font-size: 15px; cursor: pointer; }
+        .nav { display: flex; gap: 16px; margin-bottom: 24px; }
+        .nav a { text-decoration: none; color: #1976d2; font-weight: 500; padding: 6px 14px; border-radius: 4px; transition: background .2s; }
+        .nav a.active, .nav a:hover { background: #e3f2fd; }
+        .logout { color: #e53935 !important; font-weight: bold; }
+        @media (max-width: 600px) {
+            .container { padding: 10px; }
+            input, select { font-size: 13px; }
+            .nav { flex-direction: column; gap: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav">
+            <a href="/admin/bookings">Записи</a>
+            <a href="/admin/services" class="active">Услуги</a>
+            <a href="/admin/logout" class="logout" style="margin-left:auto;">Выйти</a>
+        </div>
+        <h2>Редактировать услугу</h2>
+        <form method="post">
+            <input type="text" name="name" value="{{.service.Name}}" placeholder="Название" required>
+            <select name="category" required>
+                <option value="Стоматология" {{if eq .service.Category "Стоматология"}}selected{{end}}>Стоматология</option>
+            </select>
+            <input type="number" name="duration" value="{{.service.Duration}}" placeholder="Длительность (мин)" required>
+            <input type="number" name="price" value="{{.service.Price}}" placeholder="Цена" required>
+            <button type="submit" class="btn">Сохранить</button>
+            <a href="/admin/services" style="margin-left:16px;">Отмена</a>
+        </form>
+    </div>
+</body>
+</html> 

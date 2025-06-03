@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: mvp-dental-backend
+    env: go
+    buildCommand: go build -o main
+    startCommand: ./main
+    envVars:
+      - key: GO_ENV
+        value: production
+      - key: PORT
+        value: 8080 
