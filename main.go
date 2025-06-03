@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -132,7 +134,10 @@ func main() {
 			body, _ := c.GetRawData()
 			log.Printf("Raw request body: %s", string(body))
 
-			if err := c.ShouldBindJSON(&req); err != nil {
+			// Восстанавливаем body для повторного чтения
+			c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+
+			if err := c.BindJSON(&req); err != nil {
 				log.Printf("Error binding JSON: %v", err)
 				c.JSON(400, gin.H{"error": "Некорректные данные"})
 				return
