@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -16,7 +17,26 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+func isPortInUse(port string) bool {
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		return true
+	}
+	ln.Close()
+	return false
+}
+
 func main() {
+	// Проверяем, не запущен ли уже экземпляр приложения
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	if isPortInUse(port) {
+		log.Printf("Port %s is already in use, another instance is running", port)
+		return
+	}
+
 	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if botToken == "" {
 		log.Fatal("TELEGRAM_BOT_TOKEN is not set")
@@ -52,7 +72,7 @@ func main() {
 	// Запускаем веб-сервер в отдельной горутине
 	go func() {
 		r := gin.Default()
-		
+
 		// Настраиваем CORS
 		config := cors.DefaultConfig()
 		config.AllowAllOrigins = true
@@ -106,39 +126,39 @@ func main() {
 		r.POST("/api/send_sms", func(c *gin.Context) {
 			log.Printf("Received /api/send_sms request")
 			log.Printf("Request headers: %v", c.Request.Header)
-			
+
 			var req struct {
 				Phone      string `json:"phone"`
 				TelegramID int64  `json:"telegram_id"`
 			}
-			
+
 			body, _ := c.GetRawData()
 			log.Printf("Raw request body: %s", string(body))
-			
+
 			if err := c.ShouldBindJSON(&req); err != nil {
 				log.Printf("Error binding JSON: %v", err)
 				c.JSON(400, gin.H{"error": "Некорректные данные"})
 				return
 			}
-			
+
 			log.Printf("Parsed request: phone=%q, telegram_id=%d", req.Phone, req.TelegramID)
-			
+
 			if req.Phone == "" || req.TelegramID == 0 {
 				log.Printf("Invalid request: phone=%q, telegram_id=%d", req.Phone, req.TelegramID)
 				c.JSON(400, gin.H{"error": "Некорректные данные"})
 				return
 			}
-			
+
 			log.Printf("Received phone number: %q", req.Phone)
 			if !validatePhone(req.Phone) {
 				log.Printf("Invalid phone number format: %q", req.Phone)
 				c.JSON(400, gin.H{"error": "Некорректный формат номера телефона"})
 				return
 			}
-			
+
 			code := sendSMSCode(req.Phone, req.TelegramID)
 			log.Printf("Generated SMS code for phone %q: %s", req.Phone, code)
-			
+
 			c.JSON(200, gin.H{"ok": true, "code": code})
 		})
 
@@ -180,12 +200,6 @@ func main() {
 			delete(smsCodes, req.TelegramID)
 			c.JSON(200, gin.H{"ok": true})
 		})
-
-		// Получаем порт из переменной окружения или используем 8080 по умолчанию
-		port := os.Getenv("PORT")
-		if port == "" {
-			port = "8080"
-		}
 
 		log.Printf("Starting web server on port %s", port)
 		if err := r.Run(":" + port); err != nil {
