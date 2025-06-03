@@ -25,8 +25,8 @@ Telegram-бот и веб-админка для записи клиентов в
 
 ### 1. Клонируйте репозиторий и установите зависимости
 ```sh
-git clone ...
-cd MVP_ChatBot
+git clone https://github.com/remakerzz/mvp-dental-backend.git
+cd mvp-dental-backend
 go mod tidy
 ```
 
@@ -75,7 +75,6 @@ password: admin
 ## Переменные окружения
 - `TELEGRAM_BOT_TOKEN` — токен Telegram-бота
 - `SMSRU_API_ID` — API-ключ SMS-сервиса (если используете sms.ru)
-- `RENDER_DISK_PATH` — путь к постоянному хранилищу на Render.com (для продакшена)
 
 ## Структура проекта
 - `main.go` — запуск бота и веб-сервера
@@ -84,12 +83,6 @@ password: admin
 - `db.go` — работа с БД
 - `migrations.sql` — миграции
 - `templates/` — HTML-шаблоны админки
-
-## Экспорт расписания
-В админке есть кнопка "Экспорт в PDF" — скачивает расписание на выбранный день.
-
-## Автоотмена записей
-Неподтвержденные записи автоматически отменяются через 15 минут.
 
 ## Интеграция с SMS
 В файле `handlers.go` функция `sendSMSCode` — замените заглушку на реальный вызов API вашего SMS-провайдера.
