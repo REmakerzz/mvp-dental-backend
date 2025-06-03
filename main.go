@@ -46,8 +46,103 @@ func main() {
 		store := cookie.NewStore([]byte("secret"))
 		r.Use(sessions.Sessions("adminsession", store))
 
+		// Админка
 		r.GET("/admin/login", adminLoginHandler())
 		r.POST("/admin/login", adminLoginHandler())
+		r.GET("/admin/bookings", adminAuthMiddleware(), adminBookingsHandler(db))
+		r.GET("/admin/logout", adminLogoutHandler())
+		r.GET("/admin/services", adminAuthMiddleware(), adminServicesHandler(db))
+		r.POST("/admin/services", adminAuthMiddleware(), adminServicesHandler(db))
+		r.GET("/admin/export_pdf", adminAuthMiddleware(), adminExportPDFHandler(db))
+		r.GET("/admin/services/edit/:id", adminAuthMiddleware(), adminEditServiceHandler(db))
+		r.POST("/admin/services/edit/:id", adminAuthMiddleware(), adminEditServiceHandler(db))
+		r.POST("/admin/services/delete/:id", adminAuthMiddleware(), adminDeleteServiceHandler(db))
+		r.POST("/admin/bookings/delete/:id", adminAuthMiddleware(), adminDeleteBookingHandler(db))
+
+		// Публичный API для WebApp: список стоматологических услуг
+		r.GET("/api/services", func(c *gin.Context) {
+			rows, err := db.Query(`SELECT id, name, category, duration, price FROM services WHERE category = 'Стоматология'`)
+			if err != nil {
+				c.JSON(500, gin.H{"error": "DB error"})
+				return
+			}
+			defer rows.Close()
+			var services []Service
+			for rows.Next() {
+				var s Service
+				if err := rows.Scan(&s.ID, &s.Name, &s.Category, &s.Duration, &s.Price); err == nil {
+					services = append(services, s)
+				}
+			}
+			c.JSON(200, services)
+		})
+
+		// Публичный API: отправка SMS-кода (заглушка, возвращает код)
+		r.POST("/api/send_sms", func(c *gin.Context) {
+			var req struct {
+				Phone      string `json:"phone"`
+				TelegramID int64  `json:"telegram_id"`
+			}
+			log.Printf("Received request body: %+v", c.Request.Body)
+			if err := c.ShouldBindJSON(&req); err != nil {
+				log.Printf("Error binding JSON: %v", err)
+				c.JSON(400, gin.H{"error": "Некорректные данные"})
+				return
+			}
+			log.Printf("Parsed request: phone=%q, telegram_id=%d", req.Phone, req.TelegramID)
+			if req.Phone == "" || req.TelegramID == 0 {
+				log.Printf("Invalid request: phone=%q, telegram_id=%d", req.Phone, req.TelegramID)
+				c.JSON(400, gin.H{"error": "Некорректные данные"})
+				return
+			}
+			log.Printf("Received phone number: %q", req.Phone)
+			if !validatePhone(req.Phone) {
+				log.Printf("Invalid phone number format: %q", req.Phone)
+				c.JSON(400, gin.H{"error": "Некорректный формат номера телефона"})
+				return
+			}
+			code := sendSMSCode(req.Phone, req.TelegramID)
+			c.JSON(200, gin.H{"ok": true, "code": code})
+		})
+
+		// Публичный API: создание записи (с проверкой кода)
+		r.POST("/api/bookings", func(c *gin.Context) {
+			var req struct {
+				Phone      string `json:"phone"`
+				TelegramID int64  `json:"telegram_id"`
+				Name       string `json:"name"`
+				ServiceID  int    `json:"service_id"`
+				Date       string `json:"date"`
+				Time       string `json:"time"`
+				Code       string `json:"code"`
+			}
+			log.Printf("Received booking request body: %+v", c.Request.Body)
+			if err := c.ShouldBindJSON(&req); err != nil {
+				log.Printf("Error binding JSON: %v", err)
+				c.JSON(400, gin.H{"error": "Некорректные данные"})
+				return
+			}
+			log.Printf("Parsed booking request: %+v", req)
+			if req.Phone == "" || req.TelegramID == 0 || req.ServiceID == 0 || req.Date == "" || req.Time == "" || req.Code == "" {
+				log.Printf("Invalid request data: phone=%q, telegram_id=%d, service_id=%d, date=%q, time=%q, code=%q",
+					req.Phone, req.TelegramID, req.ServiceID, req.Date, req.Time, req.Code)
+				c.JSON(400, gin.H{"error": "Некорректные данные"})
+				return
+			}
+			if code, ok := smsCodes[req.TelegramID]; !ok || code != req.Code {
+				c.JSON(400, gin.H{"error": "Неверный код"})
+				return
+			}
+			userID := getOrCreateUserID(db, req.TelegramID)
+			db.Exec(`UPDATE users SET name = ?, phone = ? WHERE id = ?`, req.Name, req.Phone, userID)
+			_, err := db.Exec(`INSERT INTO bookings (user_id, service_id, date, time, status, phone_confirmed) VALUES (?, ?, ?, ?, 'Подтверждено', 1)`, userID, req.ServiceID, req.Date, req.Time)
+			if err != nil {
+				c.JSON(500, gin.H{"error": "Ошибка при сохранении записи"})
+				return
+			}
+			delete(smsCodes, req.TelegramID)
+			c.JSON(200, gin.H{"ok": true})
+		})
 
 		// Получаем порт из переменной окружения или используем 8080 по умолчанию
 		port := os.Getenv("PORT")
@@ -210,115 +305,6 @@ func sendMainMenu(bot *tgbotapi.BotAPI, chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, "Добро пожаловать! Выберите действие:")
 	msg.ReplyMarkup = menu
 	bot.Send(msg)
-}
-
-func runAdminWeb(db *sql.DB) {
-	r := gin.Default()
-	r.Use(cors.Default())
-	r.LoadHTMLGlob("templates/*.html")
-
-	store := cookie.NewStore([]byte("secret"))
-	r.Use(sessions.Sessions("adminsession", store))
-
-	r.GET("/admin/login", adminLoginHandler())
-	r.POST("/admin/login", adminLoginHandler())
-
-	r.GET("/admin/bookings", adminAuthMiddleware(), adminBookingsHandler(db))
-	r.GET("/admin/logout", adminLogoutHandler())
-	r.GET("/admin/services", adminAuthMiddleware(), adminServicesHandler(db))
-	r.POST("/admin/services", adminAuthMiddleware(), adminServicesHandler(db))
-	r.GET("/admin/export_pdf", adminAuthMiddleware(), adminExportPDFHandler(db))
-	r.GET("/admin/services/edit/:id", adminAuthMiddleware(), adminEditServiceHandler(db))
-	r.POST("/admin/services/edit/:id", adminAuthMiddleware(), adminEditServiceHandler(db))
-	r.POST("/admin/services/delete/:id", adminAuthMiddleware(), adminDeleteServiceHandler(db))
-	r.POST("/admin/bookings/delete/:id", adminAuthMiddleware(), adminDeleteBookingHandler(db))
-
-	// Публичный API для WebApp: список стоматологических услуг
-	r.GET("/api/services", func(c *gin.Context) {
-		rows, err := db.Query(`SELECT id, name, category, duration, price FROM services WHERE category = 'Стоматология'`)
-		if err != nil {
-			c.JSON(500, gin.H{"error": "DB error"})
-			return
-		}
-		defer rows.Close()
-		var services []Service
-		for rows.Next() {
-			var s Service
-			if err := rows.Scan(&s.ID, &s.Name, &s.Category, &s.Duration, &s.Price); err == nil {
-				services = append(services, s)
-			}
-		}
-		c.JSON(200, services)
-	})
-
-	// Публичный API: отправка SMS-кода (заглушка, возвращает код)
-	r.POST("/api/send_sms", func(c *gin.Context) {
-		var req struct {
-			Phone      string `json:"phone"`
-			TelegramID int64  `json:"telegram_id"`
-		}
-		log.Printf("Received request body: %+v", c.Request.Body)
-		if err := c.ShouldBindJSON(&req); err != nil {
-			log.Printf("Error binding JSON: %v", err)
-			c.JSON(400, gin.H{"error": "Некорректные данные"})
-			return
-		}
-		log.Printf("Parsed request: phone=%q, telegram_id=%d", req.Phone, req.TelegramID)
-		if req.Phone == "" || req.TelegramID == 0 {
-			log.Printf("Invalid request: phone=%q, telegram_id=%d", req.Phone, req.TelegramID)
-			c.JSON(400, gin.H{"error": "Некорректные данные"})
-			return
-		}
-		log.Printf("Received phone number: %q", req.Phone)
-		if !validatePhone(req.Phone) {
-			log.Printf("Invalid phone number format: %q", req.Phone)
-			c.JSON(400, gin.H{"error": "Некорректный формат номера телефона"})
-			return
-		}
-		code := sendSMSCode(req.Phone, req.TelegramID)
-		c.JSON(200, gin.H{"ok": true, "code": code})
-	})
-
-	// Публичный API: создание записи (с проверкой кода)
-	r.POST("/api/bookings", func(c *gin.Context) {
-		var req struct {
-			Phone      string `json:"phone"`
-			TelegramID int64  `json:"telegram_id"`
-			Name       string `json:"name"`
-			ServiceID  int    `json:"service_id"`
-			Date       string `json:"date"`
-			Time       string `json:"time"`
-			Code       string `json:"code"`
-		}
-		log.Printf("Received booking request body: %+v", c.Request.Body)
-		if err := c.ShouldBindJSON(&req); err != nil {
-			log.Printf("Error binding JSON: %v", err)
-			c.JSON(400, gin.H{"error": "Некорректные данные"})
-			return
-		}
-		log.Printf("Parsed booking request: %+v", req)
-		if req.Phone == "" || req.TelegramID == 0 || req.ServiceID == 0 || req.Date == "" || req.Time == "" || req.Code == "" {
-			log.Printf("Invalid request data: phone=%q, telegram_id=%d, service_id=%d, date=%q, time=%q, code=%q",
-				req.Phone, req.TelegramID, req.ServiceID, req.Date, req.Time, req.Code)
-			c.JSON(400, gin.H{"error": "Некорректные данные"})
-			return
-		}
-		if code, ok := smsCodes[req.TelegramID]; !ok || code != req.Code {
-			c.JSON(400, gin.H{"error": "Неверный код"})
-			return
-		}
-		userID := getOrCreateUserID(db, req.TelegramID)
-		db.Exec(`UPDATE users SET name = ?, phone = ? WHERE id = ?`, req.Name, req.Phone, userID)
-		_, err := db.Exec(`INSERT INTO bookings (user_id, service_id, date, time, status, phone_confirmed) VALUES (?, ?, ?, ?, 'Подтверждено', 1)`, userID, req.ServiceID, req.Date, req.Time)
-		if err != nil {
-			c.JSON(500, gin.H{"error": "Ошибка при сохранении записи"})
-			return
-		}
-		delete(smsCodes, req.TelegramID)
-		c.JSON(200, gin.H{"ok": true})
-	})
-
-	r.Run(":8080")
 }
 
 func adminAuthMiddleware() gin.HandlerFunc {
