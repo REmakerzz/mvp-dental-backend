@@ -2,8 +2,8 @@ package main
 
 import (
 	"database/sql"
-	"io/ioutil"
 	"log"
+	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -23,7 +23,7 @@ func InitDB(path string, migrationsPath string) *sql.DB {
 		log.Fatalf("failed to open db: %v", err)
 	}
 
-	migrations, err := ioutil.ReadFile(migrationsPath)
+	migrations, err := os.ReadFile(migrationsPath)
 	if err != nil {
 		log.Fatalf("failed to read migrations: %v", err)
 	}
@@ -76,4 +76,3 @@ func GetAdminTelegramIDs(db *sql.DB) ([]int64, error) {
 	}
 	return ids, nil
 }
- 

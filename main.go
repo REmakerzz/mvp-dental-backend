@@ -73,6 +73,7 @@ func main() {
 	if dbPath == "" {
 		dbPath = "mvp_chatbot.db" // Fallback для локальной разработки
 	}
+	log.Printf("Using database at: %s", dbPath)
 	db := InitDB(dbPath, "migrations.sql")
 
 	// Запускаем веб-сервер в отдельной горутине
