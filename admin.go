@@ -179,29 +179,64 @@ func adminExportPDFHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 		defer rows.Close()
+
+		// Создаем PDF с поддержкой кириллицы
 		pdf := gofpdf.New("P", "mm", "A4", "")
+		pdf.AddUTF8Font("DejaVu", "", "fonts/DejaVuSansCondensed.ttf")
+		pdf.SetFont("DejaVu", "", 14)
+
+		// Добавляем заголовок
 		pdf.AddPage()
-		pdf.SetFont("Arial", "", 14)
-		pdf.Cell(40, 10, "Расписание на "+date)
-		pdf.Ln(12)
-		pdf.SetFont("Arial", "", 10)
-		pdf.Cell(40, 8, "Клиент")
-		pdf.Cell(40, 8, "Услуга")
-		pdf.Cell(30, 8, "Время")
-		pdf.Cell(30, 8, "Статус")
-		pdf.Ln(8)
+		pdf.Cell(190, 10, "Расписание на "+date)
+		pdf.Ln(15)
+
+		// Заголовки таблицы
+		pdf.SetFont("DejaVu", "", 12)
+		headers := []string{"Клиент", "Услуга", "Время", "Статус"}
+		widths := []float64{50, 50, 40, 40}
+
+		// Рисуем заголовки
+		for i, header := range headers {
+			pdf.CellFormat(widths[i], 10, header, "1", 0, "C", false, 0, "")
+		}
+		pdf.Ln(10)
+
+		// Данные таблицы
+		pdf.SetFont("DejaVu", "", 10)
 		for rows.Next() {
 			var user, service, date, time, status string
 			rows.Scan(&user, &service, &date, &time, &status)
-			pdf.Cell(40, 8, user)
-			pdf.Cell(40, 8, service)
-			pdf.Cell(30, 8, time)
-			pdf.Cell(30, 8, status)
+
+			// Проверяем на nil значения
+			if user == "" {
+				user = "Не указан"
+			}
+			if service == "" {
+				service = "Не указана"
+			}
+			if time == "" {
+				time = "Не указано"
+			}
+			if status == "" {
+				status = "Не указан"
+			}
+
+			pdf.CellFormat(widths[0], 8, user, "1", 0, "", false, 0, "")
+			pdf.CellFormat(widths[1], 8, service, "1", 0, "", false, 0, "")
+			pdf.CellFormat(widths[2], 8, time, "1", 0, "", false, 0, "")
+			pdf.CellFormat(widths[3], 8, status, "1", 0, "", false, 0, "")
 			pdf.Ln(8)
 		}
+
+		// Отправляем PDF
 		c.Header("Content-Type", "application/pdf")
-		c.Header("Content-Disposition", "attachment; filename=schedule.pdf")
-		_ = pdf.Output(c.Writer)
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=schedule_%s.pdf", date))
+		err = pdf.Output(c.Writer)
+		if err != nil {
+			log.Printf("Error generating PDF: %v", err)
+			c.String(500, "Error generating PDF")
+			return
+		}
 	}
 }
 
