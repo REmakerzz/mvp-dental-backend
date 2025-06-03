@@ -62,6 +62,10 @@ func main() {
 	if dbPath == "" {
 		dbPath = "mvp_chatbot.db" // Fallback для локальной разработки
 	}
+	// Создаем директорию /data если её нет
+	if err := os.MkdirAll("/data", 0755); err != nil {
+		log.Printf("Warning: failed to create /data directory: %v", err)
+	}
 	log.Printf("Using database at: %s", dbPath)
 	db := InitDB(dbPath, "migrations.sql")
 
