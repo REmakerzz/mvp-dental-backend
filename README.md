@@ -21,40 +21,6 @@ Telegram-бот и веб-админка для записи клиентов в
 - [gofpdf](https://github.com/jung-kurt/gofpdf)
 - [phonenumbers](https://github.com/nyaruka/phonenumbers)
 
-## Быстрый старт
-
-### 1. Клонируйте репозиторий и установите зависимости
-```sh
-git clone https://github.com/remakerzz/mvp-dental-backend.git
-cd mvp-dental-backend
-go mod tidy
-```
-
-### 2. Настройте переменные окружения
-Создайте файл `.env` или экспортируйте переменные:
-
-```
-TELEGRAM_BOT_TOKEN=ваш_токен_бота
-SMSRU_API_ID=ваш_api_id_от_sms.ru
-```
-
-### 3. Запустите миграции (создание БД)
-БД инициализируется автоматически при первом запуске.
-
-### 4. Запуск
-```sh
-go run main.go db.go handlers.go admin.go
-```
-
-- Бот работает в Telegram
-- Админка доступна на http://localhost:8080/admin/login
-
-### 5. Дефолтный логин/пароль админки
-```
-login: admin
-password: admin
-```
-
 ## Функционал бота
 
 ### Для клиентов
