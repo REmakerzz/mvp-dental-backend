@@ -321,6 +321,13 @@ func showServices(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB) {
 		return
 	}
 
+	// Проверяем, есть ли услуги
+	if len(servicesByCategory) == 0 {
+		msg := tgbotapi.NewMessage(chatID, "К сожалению, в данный момент нет доступных услуг.")
+		bot.Send(msg)
+		return
+	}
+
 	// Создаем сообщение с услугами
 	var text strings.Builder
 	text.WriteString("Доступные услуги:\n\n")
@@ -349,7 +356,9 @@ func showServices(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB) {
 	}
 
 	msg := tgbotapi.NewMessage(chatID, text.String())
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(keyboard...)
+	if len(keyboard) > 0 {
+		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(keyboard...)
+	}
 	if _, err := bot.Send(msg); err != nil {
 		log.Printf("Error sending services message: %v", err)
 	}
