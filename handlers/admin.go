@@ -339,7 +339,7 @@ func adminBookingsHandler(db *sql.DB) gin.HandlerFunc {
 func AdminLoginHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Method == "GET" {
-			c.HTML(http.StatusOK, "login.html", nil)
+			c.HTML(http.StatusOK, "admin_login.html", nil)
 			return
 		}
 
@@ -352,7 +352,7 @@ func AdminLoginHandler() gin.HandlerFunc {
 			session.Save()
 			c.Redirect(http.StatusFound, "/admin/bookings")
 		} else {
-			c.HTML(http.StatusOK, "login.html", gin.H{
+			c.HTML(http.StatusOK, "admin_login.html", gin.H{
 				"error": "Неверное имя пользователя или пароль",
 			})
 		}
