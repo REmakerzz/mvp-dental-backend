@@ -83,13 +83,8 @@ func GetAvailableDatesHandler(db *sql.DB) gin.HandlerFunc {
 			}
 		}
 
-		// Получаем максимальное количество записей в день
-		var maxBookingsPerDay int
-		err = db.QueryRow("SELECT COUNT(*) FROM doctors").Scan(&maxBookingsPerDay)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении данных"})
-			return
-		}
+		// Максимальное количество записей в день
+		maxBookingsPerDay := 8
 
 		// Формируем список доступных дат
 		var availableDates []string
@@ -115,29 +110,8 @@ func GetAvailableTimesHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Получаем день недели для указанной даты
-		t, err := time.Parse("2006-01-02", date)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат даты"})
-			return
-		}
-		dayOfWeek := int(t.Weekday())
-
-		// Получаем расписание врачей на указанный день недели
-		rows, err := db.Query(`
-			SELECT DISTINCT start_time, end_time
-			FROM doctor_schedule
-			WHERE day_of_week = ?
-			ORDER BY start_time
-		`, dayOfWeek)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении данных"})
-			return
-		}
-		defer rows.Close()
-
 		// Получаем существующие записи на указанную дату
-		bookings, err := db.Query(`
+		rows, err := db.Query(`
 			SELECT time
 			FROM bookings
 			WHERE date = ?
@@ -146,32 +120,26 @@ func GetAvailableTimesHandler(db *sql.DB) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении данных"})
 			return
 		}
-		defer bookings.Close()
+		defer rows.Close()
 
 		// Создаем карту занятых времен
 		bookedTimes := make(map[string]bool)
-		for bookings.Next() {
+		for rows.Next() {
 			var time string
-			if err := bookings.Scan(&time); err == nil {
+			if err := rows.Scan(&time); err == nil {
 				bookedTimes[time] = true
 			}
 		}
 
 		// Формируем список доступных времен
 		var availableTimes []string
-		for rows.Next() {
-			var startTime, endTime string
-			if err := rows.Scan(&startTime, &endTime); err == nil {
-				// Генерируем временные слоты с интервалом в 30 минут
-				start, _ := time.Parse("15:04", startTime)
-				end, _ := time.Parse("15:04", endTime)
+		start, _ := time.Parse("15:04", "09:00")
+		end, _ := time.Parse("15:04", "18:00")
 
-				for t := start; t.Before(end); t = t.Add(30 * time.Minute) {
-					timeStr := t.Format("15:04")
-					if !bookedTimes[timeStr] {
-						availableTimes = append(availableTimes, timeStr)
-					}
-				}
+		for t := start; t.Before(end); t = t.Add(30 * time.Minute) {
+			timeStr := t.Format("15:04")
+			if !bookedTimes[timeStr] {
+				availableTimes = append(availableTimes, timeStr)
 			}
 		}
 
