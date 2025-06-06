@@ -87,8 +87,9 @@ func adminDoctorsHandler(db *sql.DB) gin.HandlerFunc {
 // adminEditDoctorHandler обрабатывает страницу редактирования врача
 func adminEditDoctorHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		doctorID := c.Param("doctor_id")
 		// Получаем ID врача из URL
-		doctorID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		doctorIDInt, err := strconv.ParseInt(doctorID, 10, 64)
 		if err != nil {
 			c.HTML(http.StatusBadRequest, "error.html", gin.H{
 				"error": "Неверный ID врача",
@@ -101,7 +102,7 @@ func adminEditDoctorHandler(db *sql.DB) gin.HandlerFunc {
 			var doctor Doctor
 			err := db.QueryRow(
 				"SELECT id, name, specialization, description, photo_url, is_active FROM doctors WHERE id = ?",
-				doctorID,
+				doctorIDInt,
 			).Scan(&doctor.ID, &doctor.Name, &doctor.Specialization, &doctor.Description, &doctor.PhotoURL, &doctor.IsActive)
 			if err != nil {
 				c.HTML(http.StatusNotFound, "error.html", gin.H{
@@ -126,7 +127,7 @@ func adminEditDoctorHandler(db *sql.DB) gin.HandlerFunc {
 
 			_, err := db.Exec(
 				"UPDATE doctors SET name = ?, specialization = ?, description = ?, photo_url = ?, is_active = ? WHERE id = ?",
-				name, specialization, description, photoURL, isActive, doctorID,
+				name, specialization, description, photoURL, isActive, doctorIDInt,
 			)
 			if err != nil {
 				c.HTML(http.StatusInternalServerError, "error.html", gin.H{
@@ -144,6 +145,7 @@ func adminEditDoctorHandler(db *sql.DB) gin.HandlerFunc {
 // adminDeleteDoctorHandler обрабатывает удаление врача
 func adminDeleteDoctorHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		doctorID := c.Param("doctor_id")
 		if c.Request.Method != http.MethodPost {
 			c.HTML(http.StatusMethodNotAllowed, "error.html", gin.H{
 				"error": "Метод не поддерживается",
@@ -152,7 +154,7 @@ func adminDeleteDoctorHandler(db *sql.DB) gin.HandlerFunc {
 		}
 
 		// Получаем ID врача из URL
-		doctorID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		doctorIDInt, err := strconv.ParseInt(doctorID, 10, 64)
 		if err != nil {
 			c.HTML(http.StatusBadRequest, "error.html", gin.H{
 				"error": "Неверный ID врача",
@@ -161,7 +163,7 @@ func adminDeleteDoctorHandler(db *sql.DB) gin.HandlerFunc {
 		}
 
 		// Удаляем врача
-		_, err = db.Exec("DELETE FROM doctors WHERE id = ?", doctorID)
+		_, err = db.Exec("DELETE FROM doctors WHERE id = ?", doctorIDInt)
 		if err != nil {
 			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 				"error": "Ошибка при удалении врача",
@@ -176,8 +178,9 @@ func adminDeleteDoctorHandler(db *sql.DB) gin.HandlerFunc {
 // adminDoctorScheduleHandler обрабатывает страницу управления расписанием врача
 func adminDoctorScheduleHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		doctorID := c.Param("doctor_id")
 		// Получаем ID врача из URL
-		doctorID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		doctorIDInt, err := strconv.ParseInt(doctorID, 10, 64)
 		if err != nil {
 			c.HTML(http.StatusBadRequest, "error.html", gin.H{
 				"error": "Неверный ID врача",
@@ -190,7 +193,7 @@ func adminDoctorScheduleHandler(db *sql.DB) gin.HandlerFunc {
 			var doctor Doctor
 			err := db.QueryRow(
 				"SELECT id, name, specialization, description, photo_url, is_active FROM doctors WHERE id = ?",
-				doctorID,
+				doctorIDInt,
 			).Scan(&doctor.ID, &doctor.Name, &doctor.Specialization, &doctor.Description, &doctor.PhotoURL, &doctor.IsActive)
 			if err != nil {
 				c.HTML(http.StatusNotFound, "error.html", gin.H{
@@ -202,7 +205,7 @@ func adminDoctorScheduleHandler(db *sql.DB) gin.HandlerFunc {
 			// Получаем расписание врача
 			rows, err := db.Query(
 				"SELECT id, doctor_id, day_of_week, start_time, end_time, is_working_day FROM doctor_schedules WHERE doctor_id = ? ORDER BY day_of_week, start_time",
-				doctorID,
+				doctorIDInt,
 			)
 			if err != nil {
 				c.HTML(http.StatusInternalServerError, "error.html", gin.H{
@@ -246,7 +249,7 @@ func adminDoctorScheduleHandler(db *sql.DB) gin.HandlerFunc {
 
 			_, err = db.Exec(
 				"INSERT INTO doctor_schedules (doctor_id, day_of_week, start_time, end_time, is_working_day) VALUES (?, ?, ?, ?, ?)",
-				doctorID, dayOfWeek, startTime, endTime, isWorkingDay,
+				doctorIDInt, dayOfWeek, startTime, endTime, isWorkingDay,
 			)
 			if err != nil {
 				c.HTML(http.StatusInternalServerError, "error.html", gin.H{
@@ -255,7 +258,7 @@ func adminDoctorScheduleHandler(db *sql.DB) gin.HandlerFunc {
 				return
 			}
 
-			c.Redirect(http.StatusSeeOther, "/admin/doctors/"+strconv.FormatInt(doctorID, 10)+"/schedule")
+			c.Redirect(http.StatusSeeOther, "/admin/doctors/"+doctorID+"/schedule")
 			return
 		}
 	}
@@ -267,7 +270,19 @@ func adminDeleteScheduleHandler(db *sql.DB) gin.HandlerFunc {
 		doctorID := c.Param("doctor_id")
 		scheduleID := c.Param("schedule_id")
 
-		_, err := db.Exec("DELETE FROM doctor_schedule WHERE id = ? AND doctor_id = ?", scheduleID, doctorID)
+		doctorIDInt, err := strconv.ParseInt(doctorID, 10, 64)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "Failed to parse doctor ID"})
+			return
+		}
+
+		scheduleIDInt, err := strconv.ParseInt(scheduleID, 10, 64)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "Failed to parse schedule ID"})
+			return
+		}
+
+		_, err = db.Exec("DELETE FROM doctor_schedule WHERE id = ? AND doctor_id = ?", scheduleIDInt, doctorIDInt)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "Failed to delete schedule"})
 			return

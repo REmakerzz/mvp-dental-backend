@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // Handler представляет обработчик HTTP-запросов
@@ -323,17 +325,295 @@ func adminBookingsHandler(db *sql.DB) gin.HandlerFunc {
 				ClientName  string
 				Phone       string
 			}
-			if err := rows.Scan(&b.ID, &b.Date, &b.Time, &b.Status, &b.ServiceName, &b.ClientName, &b.Phone); err != nil {
-				c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-					"error": "Ошибка при сканировании данных записи",
-				})
-				return
+			if err := rows.Scan(&b.ID, &b.Date, &b.Time, &b.Status, &b.ServiceName, &b.ClientName, &b.Phone); err == nil {
+				bookings = append(bookings, b)
 			}
-			bookings = append(bookings, b)
 		}
 
 		c.HTML(http.StatusOK, "admin_bookings.html", gin.H{
 			"bookings": bookings,
 		})
+	}
+}
+
+func AdminLoginHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Method == "GET" {
+			c.HTML(http.StatusOK, "login.html", nil)
+			return
+		}
+
+		username := c.PostForm("username")
+		password := c.PostForm("password")
+
+		if username == "admin" && password == "admin" {
+			session := sessions.Default(c)
+			session.Set("authenticated", true)
+			session.Save()
+			c.Redirect(http.StatusFound, "/admin/bookings")
+		} else {
+			c.HTML(http.StatusOK, "login.html", gin.H{
+				"error": "Неверное имя пользователя или пароль",
+			})
+		}
+	}
+}
+
+func AdminLogoutHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		session := sessions.Default(c)
+		session.Clear()
+		session.Save()
+		c.Redirect(http.StatusFound, "/admin/login")
+	}
+}
+
+func AdminAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		session := sessions.Default(c)
+		if auth, ok := session.Get("authenticated").(bool); !ok || !auth {
+			c.Redirect(http.StatusFound, "/admin/login")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+func AdminBookingsHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		rows, err := db.Query(`
+			SELECT b.id, b.date, b.time, b.status, s.name as service_name, u.telegram_id
+			FROM bookings b
+			JOIN services s ON b.service_id = s.id
+			JOIN users u ON b.user_id = u.id
+			ORDER BY b.date DESC, b.time DESC
+		`)
+		if err != nil {
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+				"error": "Ошибка при получении данных",
+			})
+			return
+		}
+		defer rows.Close()
+
+		var bookings []struct {
+			ID          int64
+			Date        string
+			Time        string
+			Status      string
+			ServiceName string
+			TelegramID  int64
+		}
+
+		for rows.Next() {
+			var b struct {
+				ID          int64
+				Date        string
+				Time        string
+				Status      string
+				ServiceName string
+				TelegramID  int64
+			}
+			if err := rows.Scan(&b.ID, &b.Date, &b.Time, &b.Status, &b.ServiceName, &b.TelegramID); err == nil {
+				bookings = append(bookings, b)
+			}
+		}
+
+		c.HTML(http.StatusOK, "bookings.html", gin.H{
+			"bookings": bookings,
+		})
+	}
+}
+
+func AdminDeleteBookingHandler(db *sql.DB, bot *tgbotapi.BotAPI) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ID не указан"})
+			return
+		}
+
+		// Получаем информацию о записи перед удалением
+		var telegramID int64
+		var date, time string
+		err := db.QueryRow(`
+			SELECT u.telegram_id, b.date, b.time
+			FROM bookings b
+			JOIN users u ON b.user_id = u.id
+			WHERE b.id = ?
+		`, id).Scan(&telegramID, &date, &time)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при получении данных"})
+			return
+		}
+
+		// Удаляем запись
+		_, err = db.Exec("DELETE FROM bookings WHERE id = ?", id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при удалении записи"})
+			return
+		}
+
+		// Отправляем уведомление пользователю
+		msg := tgbotapi.NewMessage(telegramID, "Ваша запись на "+date+" в "+time+" была отменена администратором.")
+		bot.Send(msg)
+
+		c.Redirect(http.StatusFound, "/admin/bookings")
+	}
+}
+
+func AdminServicesHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Method == "GET" {
+			rows, err := db.Query("SELECT id, name, category, duration, price FROM services ORDER BY category, name")
+			if err != nil {
+				c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+					"error": "Ошибка при получении данных",
+				})
+				return
+			}
+			defer rows.Close()
+
+			var services []struct {
+				ID       int64
+				Name     string
+				Category string
+				Duration int
+				Price    float64
+			}
+
+			for rows.Next() {
+				var s struct {
+					ID       int64
+					Name     string
+					Category string
+					Duration int
+					Price    float64
+				}
+				if err := rows.Scan(&s.ID, &s.Name, &s.Category, &s.Duration, &s.Price); err == nil {
+					services = append(services, s)
+				}
+			}
+
+			c.HTML(http.StatusOK, "services.html", gin.H{
+				"services": services,
+			})
+			return
+		}
+
+		// POST запрос - добавление новой услуги
+		name := c.PostForm("name")
+		category := c.PostForm("category")
+		duration := c.PostForm("duration")
+		price := c.PostForm("price")
+
+		if name == "" || category == "" || duration == "" || price == "" {
+			c.HTML(http.StatusBadRequest, "services.html", gin.H{
+				"error": "Все поля должны быть заполнены",
+			})
+			return
+		}
+
+		_, err := db.Exec(`
+			INSERT INTO services (name, category, duration, price)
+			VALUES (?, ?, ?, ?)
+		`, name, category, duration, price)
+
+		if err != nil {
+			c.HTML(http.StatusInternalServerError, "services.html", gin.H{
+				"error": "Ошибка при добавлении услуги",
+			})
+			return
+		}
+
+		c.Redirect(http.StatusFound, "/admin/services")
+	}
+}
+
+func AdminEditServiceHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ID не указан"})
+			return
+		}
+
+		if c.Request.Method == "GET" {
+			var service struct {
+				ID       int64
+				Name     string
+				Category string
+				Duration int
+				Price    float64
+			}
+
+			err := db.QueryRow("SELECT id, name, category, duration, price FROM services WHERE id = ?", id).
+				Scan(&service.ID, &service.Name, &service.Category, &service.Duration, &service.Price)
+			if err != nil {
+				c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+					"error": "Ошибка при получении данных",
+				})
+				return
+			}
+
+			c.HTML(http.StatusOK, "edit_service.html", gin.H{
+				"service": service,
+			})
+			return
+		}
+
+		// POST запрос - обновление услуги
+		name := c.PostForm("name")
+		category := c.PostForm("category")
+		duration := c.PostForm("duration")
+		price := c.PostForm("price")
+
+		if name == "" || category == "" || duration == "" || price == "" {
+			c.HTML(http.StatusBadRequest, "edit_service.html", gin.H{
+				"error": "Все поля должны быть заполнены",
+			})
+			return
+		}
+
+		_, err := db.Exec(`
+			UPDATE services
+			SET name = ?, category = ?, duration = ?, price = ?
+			WHERE id = ?
+		`, name, category, duration, price, id)
+
+		if err != nil {
+			c.HTML(http.StatusInternalServerError, "edit_service.html", gin.H{
+				"error": "Ошибка при обновлении услуги",
+			})
+			return
+		}
+
+		c.Redirect(http.StatusFound, "/admin/services")
+	}
+}
+
+func AdminDeleteServiceHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ID не указан"})
+			return
+		}
+
+		_, err := db.Exec("DELETE FROM services WHERE id = ?", id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при удалении услуги"})
+			return
+		}
+
+		c.Redirect(http.StatusFound, "/admin/services")
+	}
+}
+
+func AdminExportPDFHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// TODO: Реализовать экспорт в PDF
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "Функция в разработке"})
 	}
 }
