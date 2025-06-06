@@ -393,6 +393,7 @@ func AdminBookingsHandler(db *sql.DB) gin.HandlerFunc {
 			ORDER BY b.date DESC, b.time DESC
 		`)
 		if err != nil {
+			fmt.Printf("AdminBookingsHandler error: %v\n", err)
 			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 				"error": "Ошибка при получении данных",
 			})
