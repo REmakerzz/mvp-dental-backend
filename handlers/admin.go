@@ -333,6 +333,7 @@ func adminBookingsHandler(db *sql.DB) gin.HandlerFunc {
 		c.HTML(http.StatusOK, "admin_bookings.html", gin.H{
 			"bookings": bookings,
 		})
+		fmt.Printf("AdminBookingsHandler: %d bookings\n", len(bookings))
 	}
 }
 
