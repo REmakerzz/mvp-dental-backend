@@ -423,7 +423,7 @@ func AdminBookingsHandler(db *sql.DB) gin.HandlerFunc {
 			}
 		}
 
-		c.HTML(http.StatusOK, "bookings.html", gin.H{
+		c.HTML(http.StatusOK, "admin_bookings.html", gin.H{
 			"bookings": bookings,
 		})
 	}
