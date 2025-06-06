@@ -22,6 +22,16 @@ CREATE TABLE IF NOT EXISTS services (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблица врачей
+CREATE TABLE IF NOT EXISTS doctors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    specialization TEXT NOT NULL,
+    description TEXT,
+    photo_url TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Таблица записей
 CREATE TABLE IF NOT EXISTS bookings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

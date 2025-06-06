@@ -112,8 +112,22 @@ func startWebServer(db *sql.DB, bot *tgbotapi.BotAPI, config *Config) {
 	api := r.Group("/api")
 	{
 		api.GET("/services", handlers.GetServicesHandler(db))
-		api.GET("/available_dates", handlers.GetAvailableDatesHandler(db))
-		api.GET("/available_times", handlers.GetAvailableTimesHandler(db))
+		api.POST("/services", handlers.AddServiceHandler(db))
+		api.PUT("/services/:id", handlers.UpdateServiceHandler(db))
+		api.DELETE("/services/:id", handlers.DeleteServiceHandler(db))
+
+		// Врачи
+		api.GET("/doctors", handlers.GetDoctorsHandler(db))
+		api.POST("/doctors", handlers.AddDoctorHandler(db))
+		api.PUT("/doctors/:id", handlers.UpdateDoctorHandler(db))
+		api.DELETE("/doctors/:id", handlers.DeleteDoctorHandler(db))
+
+		// Записи
+		api.GET("/available-dates", handlers.GetAvailableDatesHandler(db))
+		api.GET("/available-times", handlers.GetAvailableTimesHandler(db))
+		api.POST("/bookings", handlers.CreateBookingHandler(db))
+		api.GET("/bookings/:user_id", handlers.GetUserBookingsHandler(db))
+		api.DELETE("/bookings/:id", handlers.CancelBookingHandler(db))
 	}
 
 	// Запуск сервера
