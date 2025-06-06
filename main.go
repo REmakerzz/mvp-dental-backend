@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"database/sql"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"MVP_ChatBot/models"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/sessions"
@@ -110,6 +113,16 @@ func main() {
 		r.POST("/admin/services/delete/:id", adminAuthMiddleware(), adminDeleteServiceHandler(db))
 		r.POST("/admin/bookings/delete/:id", adminAuthMiddleware(), adminDeleteBookingHandler(db, bot))
 
+		// Маршруты для управления врачами
+		r.GET("/admin/doctors", adminAuthMiddleware(), adminDoctorsHandler(db))
+		r.POST("/admin/doctors", adminAuthMiddleware(), adminDoctorsHandler(db))
+		r.GET("/admin/doctors/edit/:id", adminAuthMiddleware(), adminEditDoctorHandler(db))
+		r.POST("/admin/doctors/edit/:id", adminAuthMiddleware(), adminEditDoctorHandler(db))
+		r.POST("/admin/doctors/delete/:id", adminAuthMiddleware(), adminDeleteDoctorHandler(db))
+		r.GET("/admin/doctors/:id/schedule", adminAuthMiddleware(), adminDoctorScheduleHandler(db))
+		r.POST("/admin/doctors/:id/schedule", adminAuthMiddleware(), adminDoctorScheduleHandler(db))
+		r.POST("/admin/doctors/:doctor_id/schedule/delete/:id", adminAuthMiddleware(), adminDeleteScheduleHandler(db))
+
 		// Публичный API для WebApp: список стоматологических услуг
 		r.GET("/api/services", func(c *gin.Context) {
 			rows, err := db.Query(`SELECT id, name, category, duration, price FROM services WHERE category = 'Стоматология'`)
@@ -118,9 +131,9 @@ func main() {
 				return
 			}
 			defer rows.Close()
-			var services []Service
+			var services []models.Service
 			for rows.Next() {
-				var s Service
+				var s models.Service
 				if err := rows.Scan(&s.ID, &s.Name, &s.Category, &s.Duration, &s.Price); err == nil {
 					services = append(services, s)
 				}
@@ -131,14 +144,70 @@ func main() {
 		// Публичный API: получение доступных дат
 		r.GET("/api/available_dates", func(c *gin.Context) {
 			// Получаем даты на следующие 14 дней
-			var dates []string
-			for i := 0; i < 14; i++ {
-				date := time.Now().AddDate(0, 0, i)
-				// Пропускаем выходные
-				if date.Weekday() != time.Sunday && date.Weekday() != time.Saturday {
-					dates = append(dates, date.Format("2006-01-02"))
+			type DateInfo struct {
+				Date     string `json:"date"`
+				Status   string `json:"status"` // "available", "booked", "weekend"
+				IsActive bool   `json:"isActive"`
+			}
+			var dates []DateInfo
+			now := time.Now()
+
+			// Получаем все записи на следующие 14 дней
+			rows, err := db.Query(`
+				SELECT date, COUNT(*) as booking_count
+				FROM bookings
+				WHERE date >= ? AND date <= ?
+				AND status != 'Отменено'
+				GROUP BY date
+			`, now.Format("2006-01-02"), now.AddDate(0, 0, 14).Format("2006-01-02"))
+			if err != nil {
+				c.JSON(500, gin.H{"error": "DB error"})
+				return
+			}
+			defer rows.Close()
+
+			// Создаем карту занятых дат
+			bookedDates := make(map[string]int)
+			for rows.Next() {
+				var date string
+				var count int
+				if err := rows.Scan(&date, &count); err == nil {
+					bookedDates[date] = count
 				}
 			}
+
+			// Генерируем информацию о датах
+			for i := 0; i < 14; i++ {
+				date := now.AddDate(0, 0, i)
+				dateStr := date.Format("2006-01-02")
+
+				// Проверяем, является ли день выходным
+				if date.Weekday() == time.Sunday || date.Weekday() == time.Saturday {
+					dates = append(dates, DateInfo{
+						Date:     dateStr,
+						Status:   "weekend",
+						IsActive: false,
+					})
+					continue
+				}
+
+				// Проверяем количество записей на эту дату
+				bookingCount := bookedDates[dateStr]
+				if bookingCount >= 8 { // Предполагаем максимум 8 записей в день
+					dates = append(dates, DateInfo{
+						Date:     dateStr,
+						Status:   "booked",
+						IsActive: false,
+					})
+				} else {
+					dates = append(dates, DateInfo{
+						Date:     dateStr,
+						Status:   "available",
+						IsActive: true,
+					})
+				}
+			}
+
 			c.JSON(200, dates)
 		})
 
@@ -151,34 +220,54 @@ func main() {
 			}
 
 			// Получаем все записи на эту дату
-			rows, err := db.Query(`SELECT time FROM bookings WHERE date = ? AND status != 'Отменено'`, date)
+			rows, err := db.Query(`
+				SELECT time, COUNT(*) as booking_count
+				FROM bookings
+				WHERE date = ? AND status != 'Отменено'
+				GROUP BY time
+			`, date)
 			if err != nil {
 				c.JSON(500, gin.H{"error": "DB error"})
 				return
 			}
 			defer rows.Close()
 
-			// Собираем занятое время
-			bookedTimes := make(map[string]bool)
+			// Создаем карту занятого времени
+			bookedTimes := make(map[string]int)
 			for rows.Next() {
 				var time string
-				rows.Scan(&time)
-				bookedTimes[time] = true
+				var count int
+				if err := rows.Scan(&time, &count); err == nil {
+					bookedTimes[time] = count
+				}
 			}
 
 			// Генерируем доступное время (с 9:00 до 18:00, с интервалом в 30 минут)
-			var availableTimes []string
+			type TimeSlot struct {
+				Time   string `json:"time"`
+				Status string `json:"status"` // "free" или "busy"
+			}
+			var timeSlots []TimeSlot
 			startTime := time.Date(2000, 1, 1, 9, 0, 0, 0, time.UTC)
 			endTime := time.Date(2000, 1, 1, 18, 0, 0, 0, time.UTC)
 
 			for t := startTime; t.Before(endTime); t = t.Add(30 * time.Minute) {
 				timeStr := t.Format("15:04")
-				if !bookedTimes[timeStr] {
-					availableTimes = append(availableTimes, timeStr)
+				bookingCount := bookedTimes[timeStr]
+
+				// Если на это время уже есть 2 записи, считаем слот занятым
+				status := "free"
+				if bookingCount >= 2 {
+					status = "busy"
 				}
+
+				timeSlots = append(timeSlots, TimeSlot{
+					Time:   timeStr,
+					Status: status,
+				})
 			}
 
-			c.JSON(200, availableTimes)
+			c.JSON(200, timeSlots)
 		})
 
 		// Публичный API: отправка SMS-кода (заглушка, возвращает код)
@@ -276,140 +365,286 @@ func main() {
 
 	startAutoCancelCron(db)
 
-	// Обработка обновлений бота только если канал успешно создан
-	if updates != nil {
-		for update := range updates {
-			if update.CallbackQuery != nil {
-				data := update.CallbackQuery.Data
-				if strings.HasPrefix(data, "cancel_") {
-					idStr := strings.TrimPrefix(data, "cancel_")
-					id, _ := strconv.Atoi(idStr)
-					db.Exec(`UPDATE bookings SET status = 'Отменено' WHERE id = ?`, id)
-					bot.Request(tgbotapi.NewCallback(update.CallbackQuery.ID, "Запись отменена"))
-					bot.Send(tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Ваша запись отменена."))
+	// Обработка сообщений от пользователя
+	for update := range updates {
+		if update.Message == nil {
+			continue
+		}
+
+		// Получаем или создаем ID пользователя
+		userID := getOrCreateUserID(db, update.Message.From.ID)
+		if userID == 0 {
+			continue
+		}
+
+		// Получаем текущее состояние пользователя
+		state, _ := GetUserState(db, int64(userID))
+
+		// Обработка команды /start
+		if update.Message.IsCommand() && update.Message.Command() == "start" {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Добро пожаловать! Я помогу вам записаться на прием к стоматологу.")
+			msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("Записаться на прием", "book"),
+				),
+			)
+			bot.Send(msg)
+			continue
+		}
+
+		// Обработка нажатия на кнопку "Записаться на прием"
+		if update.CallbackQuery != nil && update.CallbackQuery.Data == "book" {
+			// Создаем новое состояние для пользователя
+			state = &models.UserState{
+				TelegramID: int64(userID),
+				Step:       "service",
+				CreatedAt:  time.Now(),
+			}
+			SetUserState(db, state)
+
+			// Получаем список услуг
+			services := getServiceNames(db)
+			if len(services) == 0 {
+				msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Извините, в данный момент нет доступных услуг.")
+				bot.Send(msg)
+				continue
+			}
+
+			// Создаем клавиатуру с услугами
+			var keyboard [][]tgbotapi.InlineKeyboardButton
+			for _, service := range services {
+				keyboard = append(keyboard, []tgbotapi.InlineKeyboardButton{
+					tgbotapi.NewInlineKeyboardButtonData(service, "service:"+service),
+				})
+			}
+
+			msg := tgbotapi.NewEditMessageTextAndMarkup(
+				update.CallbackQuery.Message.Chat.ID,
+				update.CallbackQuery.Message.MessageID,
+				"Выберите услугу:",
+				tgbotapi.NewInlineKeyboardMarkup(keyboard...),
+			)
+			bot.Send(msg)
+			continue
+		}
+
+		// Обработка выбора услуги
+		if update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "service:") {
+			service := strings.TrimPrefix(update.CallbackQuery.Data, "service:")
+			state.Service = service
+			state.Step = "doctor"
+			SetUserState(db, state)
+
+			// Получаем список врачей
+			rows, err := db.Query("SELECT id, name FROM doctors WHERE is_active = 1")
+			if err != nil {
+				msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Извините, произошла ошибка при получении списка врачей.")
+				bot.Send(msg)
+				continue
+			}
+			defer rows.Close()
+
+			var keyboard [][]tgbotapi.InlineKeyboardButton
+			for rows.Next() {
+				var id int64
+				var name string
+				if err := rows.Scan(&id, &name); err != nil {
 					continue
 				}
-				userID := update.CallbackQuery.From.ID
-				chatID := update.CallbackQuery.Message.Chat.ID
-				state, _ := GetUserState(db, int64(userID))
-				if state != nil && state.Step == "date" {
-					state.Date = update.CallbackQuery.Data
-					handleTimeSelection(bot, chatID, state.Date)
-					state.Step = "time"
-					SetUserState(db, state)
-					bot.Request(tgbotapi.NewCallback(update.CallbackQuery.ID, "Дата выбрана"))
-				} else if state != nil && state.Step == "time" {
-					state.Time = update.CallbackQuery.Data
-					msg := tgbotapi.NewMessage(chatID, "Введите ваш номер телефона для подтверждения:")
-					addCancelHint(&msg)
-					bot.Send(msg)
-					state.Step = "phone"
-					SetUserState(db, state)
-					bot.Request(tgbotapi.NewCallback(update.CallbackQuery.ID, "Время выбрано"))
-				}
-				continue
+				keyboard = append(keyboard, []tgbotapi.InlineKeyboardButton{
+					tgbotapi.NewInlineKeyboardButtonData(name, fmt.Sprintf("doctor:%d", id)),
+				})
 			}
 
-			if update.Message == nil { // ignore non-Message updates
-				continue
-			}
-
-			chatID := update.Message.Chat.ID
-			userID := update.Message.From.ID
-
-			if update.Message.IsCommand() {
-				switch update.Message.Command() {
-				case "start":
-					sendMainMenu(bot, chatID)
-				case "cancel":
-					ClearUserState(db, int64(userID))
-					handleCancelBooking(bot, chatID)
-				}
-				continue
-			}
-
-			if update.Message.Text == "Записаться" {
-				ClearUserState(db, int64(userID))
-				handleBooking(bot, chatID, db)
-				SetUserState(db, &UserState{TelegramID: int64(userID), Step: "service"})
-				continue
-			}
-			if update.Message.Text == "Услуги" {
-				handleServices(bot, chatID, db)
-				continue
-			}
-			if update.Message.Text == "Контакты" {
-				handleContacts(bot, chatID)
-				continue
-			}
-			if update.Message.Text == "Мои записи" {
-				handleMyBookings(bot, chatID, db, int64(userID))
-				continue
-			}
-
-			// Пошаговый сценарий записи
-			state, _ := GetUserState(db, int64(userID))
-			if state != nil {
-				switch state.Step {
-				case "service":
-					state.Service = update.Message.Text
-					handleDateSelection(bot, chatID)
-					state.Step = "date"
-					SetUserState(db, state)
-				case "date":
-					state.Date = update.Message.Text
-					handleTimeSelection(bot, chatID, state.Date)
-					state.Step = "time"
-					SetUserState(db, state)
-				case "time":
-					state.Time = update.Message.Text
-					msg := tgbotapi.NewMessage(chatID, "Введите ваш номер телефона для подтверждения:")
-					bot.Send(msg)
-					state.Step = "phone"
-					SetUserState(db, state)
-				case "phone":
-					if !validatePhone(update.Message.Text) {
-						msg := tgbotapi.NewMessage(chatID, "Некорректный номер. Введите еще раз:")
-						bot.Send(msg)
-						continue
-					}
-					state.Phone = update.Message.Text
-					handleSMSConfirmation(bot, chatID, state.Phone, int64(userID))
-					state.Step = "sms"
-					SetUserState(db, state)
-				case "sms":
-					if update.Message.Text != smsCodes[int64(userID)] {
-						msg := tgbotapi.NewMessage(chatID, "Неверный код. Попробуйте еще раз:")
-						addCancelHint(&msg)
-						bot.Send(msg)
-						continue
-					}
-					// Сохраняем запись в bookings
-					userIDVal := getOrCreateUserID(db, int64(userID))
-					// Обновляем имя и телефон пользователя
-					db.Exec(`UPDATE users SET name = ?, phone = ? WHERE id = ?`, update.Message.From.FirstName, state.Phone, userIDVal)
-					_, err := db.Exec(`INSERT INTO bookings (user_id, service_id, date, time, status, phone_confirmed) VALUES (?, (SELECT id FROM services WHERE name = ?), ?, ?, 'Подтверждено', 1)`,
-						userIDVal, state.Service, state.Date, state.Time)
-					if err != nil {
-						msg := tgbotapi.NewMessage(chatID, "Ошибка при сохранении записи. Попробуйте позже.")
-						bot.Send(msg)
-					} else {
-						handleBookingConfirmed(bot, chatID)
-						// Push-уведомление админам
-						admins, _ := GetAdminTelegramIDs(db)
-						for _, adminID := range admins {
-							msg := tgbotapi.NewMessage(adminID, "Новая запись: "+state.Service+", "+state.Date+" "+state.Time+", клиент: "+state.Phone)
-							bot.Send(msg)
-						}
-					}
-					delete(smsCodes, int64(userID))
-					ClearUserState(db, int64(userID))
-				}
-			}
+			msg := tgbotapi.NewEditMessageTextAndMarkup(
+				update.CallbackQuery.Message.Chat.ID,
+				update.CallbackQuery.Message.MessageID,
+				"Выберите врача:",
+				tgbotapi.NewInlineKeyboardMarkup(keyboard...),
+			)
+			bot.Send(msg)
+			continue
 		}
-	} else {
-		// Если бот не работает, просто держим сервер запущенным
-		select {}
+
+		// Обработка выбора врача
+		if update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "doctor:") {
+			doctorID, _ := strconv.ParseInt(strings.TrimPrefix(update.CallbackQuery.Data, "doctor:"), 10, 64)
+			state.DoctorID = doctorID
+			state.Step = "date"
+			SetUserState(db, state)
+
+			// Получаем доступные даты
+			var dates []string
+			for i := 0; i < 14; i++ {
+				date := time.Now().AddDate(0, 0, i)
+				if !models.IsWeekend(date) {
+					dates = append(dates, date.Format("2006-01-02"))
+				}
+			}
+
+			var keyboard [][]tgbotapi.InlineKeyboardButton
+			for _, date := range dates {
+				keyboard = append(keyboard, []tgbotapi.InlineKeyboardButton{
+					tgbotapi.NewInlineKeyboardButtonData(date, "date:"+date),
+				})
+			}
+
+			msg := tgbotapi.NewEditMessageTextAndMarkup(
+				update.CallbackQuery.Message.Chat.ID,
+				update.CallbackQuery.Message.MessageID,
+				"Выберите дату:",
+				tgbotapi.NewInlineKeyboardMarkup(keyboard...),
+			)
+			bot.Send(msg)
+			continue
+		}
+
+		// Обработка выбора даты
+		if update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "date:") {
+			date := strings.TrimPrefix(update.CallbackQuery.Data, "date:")
+			state.Date = date
+			state.Step = "time"
+			SetUserState(db, state)
+
+			// Получаем доступное время для выбранного врача и даты
+			rows, err := db.Query(`
+				SELECT DISTINCT time
+				FROM doctor_schedules ds
+				LEFT JOIN bookings b ON b.doctor_id = ds.doctor_id AND b.date = ? AND b.time = ds.start_time
+				WHERE ds.doctor_id = ? AND ds.is_working_day = 1 AND b.id IS NULL
+				ORDER BY ds.start_time
+			`, date, state.DoctorID)
+			if err != nil {
+				msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Извините, произошла ошибка при получении доступного времени.")
+				bot.Send(msg)
+				continue
+			}
+			defer rows.Close()
+
+			var keyboard [][]tgbotapi.InlineKeyboardButton
+			for rows.Next() {
+				var time string
+				if err := rows.Scan(&time); err != nil {
+					continue
+				}
+				keyboard = append(keyboard, []tgbotapi.InlineKeyboardButton{
+					tgbotapi.NewInlineKeyboardButtonData(time, "time:"+time),
+				})
+			}
+
+			msg := tgbotapi.NewEditMessageTextAndMarkup(
+				update.CallbackQuery.Message.Chat.ID,
+				update.CallbackQuery.Message.MessageID,
+				"Выберите время:",
+				tgbotapi.NewInlineKeyboardMarkup(keyboard...),
+			)
+			bot.Send(msg)
+			continue
+		}
+
+		// Обработка выбора времени
+		if update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "time:") {
+			time := strings.TrimPrefix(update.CallbackQuery.Data, "time:")
+			state.Time = time
+			state.Step = "phone"
+			SetUserState(db, state)
+
+			msg := tgbotapi.NewEditMessageText(
+				update.CallbackQuery.Message.Chat.ID,
+				update.CallbackQuery.Message.MessageID,
+				"Пожалуйста, введите ваш номер телефона:",
+			)
+			bot.Send(msg)
+			continue
+		}
+
+		// Обработка ввода номера телефона
+		if state != nil && state.Step == "phone" {
+			phone := update.Message.Text
+			state.Phone = phone
+			state.Step = "confirm"
+			SetUserState(db, state)
+
+			// Получаем информацию об услуге и враче
+			var serviceName, doctorName string
+			err := db.QueryRow("SELECT name FROM services WHERE name = ?", state.Service).Scan(&serviceName)
+			if err != nil {
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Извините, произошла ошибка при получении информации об услуге.")
+				bot.Send(msg)
+				continue
+			}
+
+			err = db.QueryRow("SELECT name FROM doctors WHERE id = ?", state.DoctorID).Scan(&doctorName)
+			if err != nil {
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Извините, произошла ошибка при получении информации о враче.")
+				bot.Send(msg)
+				continue
+			}
+
+			// Создаем клавиатуру для подтверждения
+			keyboard := tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("Подтвердить", "confirm"),
+					tgbotapi.NewInlineKeyboardButtonData("Отменить", "cancel"),
+				),
+			)
+
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf(
+				"Пожалуйста, проверьте данные:\n\nУслуга: %s\nВрач: %s\nДата: %s\nВремя: %s\nТелефон: %s",
+				serviceName, doctorName, state.Date, state.Time, phone,
+			))
+			msg.ReplyMarkup = keyboard
+			bot.Send(msg)
+			continue
+		}
+
+		// Обработка подтверждения записи
+		if update.CallbackQuery != nil && update.CallbackQuery.Data == "confirm" {
+			// Получаем ID услуги
+			var serviceID int64
+			err := db.QueryRow("SELECT id FROM services WHERE name = ?", state.Service).Scan(&serviceID)
+			if err != nil {
+				msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Извините, произошла ошибка при создании записи.")
+				bot.Send(msg)
+				continue
+			}
+
+			// Создаем запись
+			_, err = db.Exec(`
+				INSERT INTO bookings (user_id, doctor_id, service_id, date, time, status, phone_confirmed, created_at)
+				VALUES (?, ?, ?, ?, ?, 'Ожидает подтверждения', 0, datetime('now'))
+			`, userID, state.DoctorID, serviceID, state.Date, state.Time)
+			if err != nil {
+				msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Извините, произошла ошибка при создании записи.")
+				bot.Send(msg)
+				continue
+			}
+
+			// Очищаем состояние пользователя
+			ClearUserState(db, int64(userID))
+
+			msg := tgbotapi.NewEditMessageText(
+				update.CallbackQuery.Message.Chat.ID,
+				update.CallbackQuery.Message.MessageID,
+				"Спасибо! Ваша запись создана и ожидает подтверждения. Мы свяжемся с вами в ближайшее время.",
+			)
+			bot.Send(msg)
+			continue
+		}
+
+		// Обработка отмены записи
+		if update.CallbackQuery != nil && update.CallbackQuery.Data == "cancel" {
+			// Очищаем состояние пользователя
+			ClearUserState(db, int64(userID))
+
+			msg := tgbotapi.NewEditMessageText(
+				update.CallbackQuery.Message.Chat.ID,
+				update.CallbackQuery.Message.MessageID,
+				"Запись отменена. Вы можете начать заново, нажав кнопку 'Записаться на прием'.",
+			)
+			bot.Send(msg)
+			continue
+		}
 	}
 }
 
@@ -442,25 +677,34 @@ func adminAuthMiddleware() gin.HandlerFunc {
 }
 
 func getOrCreateUserID(db *sql.DB, telegramID int64) int64 {
-	var id int64
-	err := db.QueryRow(`SELECT id FROM users WHERE telegram_id = ?`, telegramID).Scan(&id)
+	var userID int64
+	err := db.QueryRow("SELECT id FROM users WHERE telegram_id = ?", telegramID).Scan(&userID)
 	if err == sql.ErrNoRows {
-		res, err := db.Exec(`INSERT INTO users (telegram_id) VALUES (?)`, telegramID)
-		if err == nil {
-			id, _ = res.LastInsertId()
+		result, err := db.Exec("INSERT INTO users (telegram_id) VALUES (?)", telegramID)
+		if err != nil {
+			log.Printf("Error creating user: %v", err)
+			return 0
 		}
+		userID, _ = result.LastInsertId()
 	} else if err != nil {
+		log.Printf("Error getting user: %v", err)
 		return 0
 	}
-	return id
+	return userID
 }
 
 func startAutoCancelCron(db *sql.DB) {
 	c := cron.New()
-	c.AddFunc("@every 1m", func() {
-		_, err := db.Exec(`UPDATE bookings SET status = 'Отменено' WHERE status = 'Ожидание' AND phone_confirmed = 0 AND created_at <= ?`, time.Now().Add(-15*time.Minute).Format("2006-01-02 15:04:05"))
+	c.AddFunc("0 0 * * *", func() {
+		// Отменяем записи, которые не были подтверждены в течение 24 часов
+		_, err := db.Exec(`
+			UPDATE bookings 
+			SET status = 'Отменено' 
+			WHERE status = 'Ожидает подтверждения' 
+			AND created_at < datetime('now', '-24 hours')
+		`)
 		if err != nil {
-			log.Println("cron auto-cancel error:", err)
+			log.Printf("Error in auto-cancel cron: %v", err)
 		}
 	})
 	c.Start()
@@ -469,14 +713,17 @@ func startAutoCancelCron(db *sql.DB) {
 func getServiceNames(db *sql.DB) []string {
 	rows, err := db.Query("SELECT name FROM services")
 	if err != nil {
-		return []string{}
+		log.Printf("Error getting services: %v", err)
+		return nil
 	}
 	defer rows.Close()
-	var names []string
+
+	var services []string
 	for rows.Next() {
 		var name string
-		rows.Scan(&name)
-		names = append(names, name)
+		if err := rows.Scan(&name); err == nil {
+			services = append(services, name)
+		}
 	}
-	return names
+	return services
 }

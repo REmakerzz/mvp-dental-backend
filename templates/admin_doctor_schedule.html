@@ -1,0 +1,99 @@
+{{define "content"}}
+<div class="container mt-4">
+    <h2>Расписание врача: {{.doctor.Name}}</h2>
+    
+    <!-- Форма добавления расписания -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4>Добавить расписание</h4>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="/admin/doctors/{{.doctor.ID}}/schedule">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label for="day_of_week" class="form-label">День недели</label>
+                        <select class="form-select" id="day_of_week" name="day_of_week" required>
+                            <option value="1">Понедельник</option>
+                            <option value="2">Вторник</option>
+                            <option value="3">Среда</option>
+                            <option value="4">Четверг</option>
+                            <option value="5">Пятница</option>
+                            <option value="6">Суббота</option>
+                            <option value="7">Воскресенье</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="start_time" class="form-label">Время начала</label>
+                        <input type="time" class="form-control" id="start_time" name="start_time" required>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="end_time" class="form-label">Время окончания</label>
+                        <input type="time" class="form-control" id="end_time" name="end_time" required>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="is_working_day" name="is_working_day" checked>
+                        <label class="form-check-label" for="is_working_day">
+                            Рабочий день
+                        </label>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Добавить</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Расписание -->
+    <div class="card">
+        <div class="card-header">
+            <h4>Текущее расписание</h4>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>День недели</th>
+                            <th>Время начала</th>
+                            <th>Время окончания</th>
+                            <th>Статус</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .schedules}}
+                        <tr>
+                            <td>
+                                {{if eq .DayOfWeek 1}}Понедельник
+                                {{else if eq .DayOfWeek 2}}Вторник
+                                {{else if eq .DayOfWeek 3}}Среда
+                                {{else if eq .DayOfWeek 4}}Четверг
+                                {{else if eq .DayOfWeek 5}}Пятница
+                                {{else if eq .DayOfWeek 6}}Суббота
+                                {{else if eq .DayOfWeek 7}}Воскресенье
+                                {{end}}
+                            </td>
+                            <td>{{.StartTime}}</td>
+                            <td>{{.EndTime}}</td>
+                            <td>
+                                {{if .IsWorkingDay}}
+                                <span class="badge bg-success">Рабочий день</span>
+                                {{else}}
+                                <span class="badge bg-danger">Выходной</span>
+                                {{end}}
+                            </td>
+                            <td>
+                                <form method="POST" action="/admin/doctors/{{$.doctor.ID}}/schedule/delete/{{.ID}}" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Удалить запись расписания?')">Удалить</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}} 

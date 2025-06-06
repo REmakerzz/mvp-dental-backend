@@ -1,0 +1,13 @@
+{{define "content"}}
+<div class="container mt-4">
+    <div class="alert alert-danger" role="alert">
+        <h4 class="alert-heading">Ошибка!</h4>
+        <p>{{.error}}</p>
+        <hr>
+        <p class="mb-0">
+            <a href="javascript:history.back()" class="btn btn-primary">Назад</a>
+            <a href="/admin" class="btn btn-secondary">На главную</a>
+        </p>
+    </div>
+</div>
+{{end}} 

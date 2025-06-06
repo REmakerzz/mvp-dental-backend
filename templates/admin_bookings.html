@@ -43,10 +43,11 @@
             <thead>
                 <tr>
                     <th>ID</th>
-                    <th>Клиент</th>
-                    <th>Услуга</th>
                     <th>Дата</th>
                     <th>Время</th>
+                    <th>Услуга</th>
+                    <th>Клиент</th>
+                    <th>Телефон</th>
                     <th>Статус</th>
                     <th>Действия</th>
                 </tr>
@@ -55,15 +56,27 @@
             {{range .bookings}}
                 <tr>
                     <td>{{.ID}}</td>
-                    <td>{{.UserName}}</td>
-                    <td>{{.Service}}</td>
                     <td>{{.Date}}</td>
                     <td>{{.Time}}</td>
-                    <td>{{.Status}}</td>
+                    <td>{{.ServiceName}}</td>
+                    <td>{{.ClientName}}</td>
+                    <td>{{.Phone}}</td>
                     <td>
-                      <form method="post" action="/admin/bookings/delete/{{.ID}}" style="display:inline;">
-                        <button type="submit" onclick="return confirm('Удалить запись?');">Удалить</button>
-                      </form>
+                        {{if eq .Status "Подтверждено"}}
+                        <span class="badge bg-success">Подтверждено</span>
+                        {{else if eq .Status "Ожидает подтверждения"}}
+                        <span class="badge bg-warning">Ожидает подтверждения</span>
+                        {{else if eq .Status "Отменено"}}
+                        <span class="badge bg-danger">Отменено</span>
+                        {{end}}
+                    </td>
+                    <td>
+                        <div class="btn-group">
+                            <a href="/admin/bookings/{{.ID}}" class="btn btn-sm btn-primary">Просмотр</a>
+                            <form method="POST" action="/admin/bookings/delete/{{.ID}}" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Отменить запись?')">Отменить</button>
+                            </form>
+                        </div>
                     </td>
                 </tr>
             {{else}}

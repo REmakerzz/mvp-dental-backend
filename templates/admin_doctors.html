@@ -1,0 +1,74 @@
+{{define "content"}}
+<div class="container mt-4">
+    <h2>Управление врачами</h2>
+    
+    <!-- Форма добавления врача -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4>Добавить врача</h4>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="/admin/doctors">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="name" class="form-label">ФИО</label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="specialization" class="form-label">Специализация</label>
+                        <input type="text" class="form-control" id="specialization" name="specialization" required>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="description" class="form-label">Описание</label>
+                    <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                </div>
+                <div class="mb-3">
+                    <label for="photo_url" class="form-label">URL фото</label>
+                    <input type="url" class="form-control" id="photo_url" name="photo_url">
+                </div>
+                <button type="submit" class="btn btn-primary">Добавить</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Список врачей -->
+    <div class="card">
+        <div class="card-header">
+            <h4>Список врачей</h4>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>ФИО</th>
+                            <th>Специализация</th>
+                            <th>Описание</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .doctors}}
+                        <tr>
+                            <td>{{.Name}}</td>
+                            <td>{{.Specialization}}</td>
+                            <td>{{.Description}}</td>
+                            <td>
+                                <div class="btn-group">
+                                    <a href="/admin/doctors/edit/{{.ID}}" class="btn btn-sm btn-primary">Редактировать</a>
+                                    <a href="/admin/doctors/{{.ID}}/schedule" class="btn btn-sm btn-info">Расписание</a>
+                                    <form method="POST" action="/admin/doctors/delete/{{.ID}}" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Удалить врача?')">Удалить</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}} 

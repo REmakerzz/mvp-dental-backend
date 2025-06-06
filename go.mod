@@ -1,16 +1,16 @@
-module mvp_chatbot
+module MVP_ChatBot
 
 go 1.23.0
 
 toolchain go1.24.3
 
 require (
-	github.com/gin-contrib/cors v1.7.5
-	github.com/gin-contrib/sessions v1.0.4
-	github.com/gin-gonic/gin v1.10.1
-	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.2-0.20221020003552-4126fa611266
+	github.com/gin-contrib/cors v1.5.0
+	github.com/gin-contrib/sessions v0.0.5
+	github.com/gin-gonic/gin v1.9.1
+	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/jung-kurt/gofpdf v1.16.2
-	github.com/mattn/go-sqlite3 v1.14.28
+	github.com/mattn/go-sqlite3 v2.0.3+incompatible
 	github.com/nyaruka/phonenumbers v1.6.3
 	github.com/robfig/cron/v3 v3.0.1
 )
