@@ -121,7 +121,7 @@ func main() {
 		r.POST("/admin/doctors/delete/:id", adminAuthMiddleware(), adminDeleteDoctorHandler(db))
 		r.GET("/admin/doctors/:id/schedule", adminAuthMiddleware(), adminDoctorScheduleHandler(db))
 		r.POST("/admin/doctors/:id/schedule", adminAuthMiddleware(), adminDoctorScheduleHandler(db))
-		r.POST("/admin/doctors/:doctor_id/schedule/delete/:id", adminAuthMiddleware(), adminDeleteScheduleHandler(db))
+		r.POST("/admin/doctors/:doctor_id/schedule/delete/:schedule_id", adminAuthMiddleware(), adminDeleteScheduleHandler(db))
 
 		// Публичный API для WebApp: список стоматологических услуг
 		r.GET("/api/services", func(c *gin.Context) {

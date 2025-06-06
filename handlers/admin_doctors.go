@@ -264,38 +264,15 @@ func adminDoctorScheduleHandler(db *sql.DB) gin.HandlerFunc {
 // adminDeleteScheduleHandler обрабатывает удаление записи из расписания
 func adminDeleteScheduleHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request.Method != http.MethodPost {
-			c.HTML(http.StatusMethodNotAllowed, "error.html", gin.H{
-				"error": "Метод не поддерживается",
-			})
+		doctorID := c.Param("doctor_id")
+		scheduleID := c.Param("schedule_id")
+
+		_, err := db.Exec("DELETE FROM doctor_schedule WHERE id = ? AND doctor_id = ?", scheduleID, doctorID)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "Failed to delete schedule"})
 			return
 		}
 
-		// Получаем ID врача и ID записи из URL
-		doctorID, err := strconv.ParseInt(c.Param("doctor_id"), 10, 64)
-		if err != nil {
-			c.HTML(http.StatusBadRequest, "error.html", gin.H{
-				"error": "Неверный ID врача",
-			})
-			return
-		}
-		scheduleID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-		if err != nil {
-			c.HTML(http.StatusBadRequest, "error.html", gin.H{
-				"error": "Неверный ID записи расписания",
-			})
-			return
-		}
-
-		// Удаляем запись из расписания
-		_, err = db.Exec("DELETE FROM doctor_schedules WHERE id = ? AND doctor_id = ?", scheduleID, doctorID)
-		if err != nil {
-			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-				"error": "Ошибка при удалении записи расписания",
-			})
-			return
-		}
-
-		c.Redirect(http.StatusSeeOther, "/admin/doctors/"+strconv.FormatInt(doctorID, 10)+"/schedule")
+		c.Redirect(http.StatusSeeOther, "/admin/doctors/"+doctorID+"/schedule")
 	}
 }
