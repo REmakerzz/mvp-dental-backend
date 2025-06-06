@@ -9,7 +9,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func startCancellationProcess(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB, userID int64) {
+func startCancellationProcessV2(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB, userID int64) {
 	// Получаем активные записи пользователя
 	rows, err := db.Query(`
 		SELECT b.id, b.date, b.time, s.name as service_name, d.name as doctor_name
