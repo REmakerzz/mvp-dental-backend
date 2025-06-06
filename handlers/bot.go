@@ -252,48 +252,89 @@ func handleCallbackQuery(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery,
 }
 
 func showServices(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB) {
+	// Получаем список услуг
 	rows, err := db.Query(`
-		SELECT name, category, duration, price
+		SELECT id, name, category, duration, price
 		FROM services
 		ORDER BY category, name
 	`)
 	if err != nil {
-		msg := tgbotapi.NewMessage(chatID, "Ошибка при получении списка услуг")
+		log.Printf("Error getting services: %v", err)
+		msg := tgbotapi.NewMessage(chatID, "Произошла ошибка при получении списка услуг. Попробуйте позже.")
 		bot.Send(msg)
 		return
 	}
 	defer rows.Close()
 
-	var services []string
-	currentCategory := ""
+	// Группируем услуги по категориям
+	servicesByCategory := make(map[string][]struct {
+		ID       int64
+		Name     string
+		Duration int
+		Price    float64
+	})
 
 	for rows.Next() {
-		var name, category string
-		var duration int
-		var price float64
-		if err := rows.Scan(&name, &category, &duration, &price); err != nil {
+		var service struct {
+			ID       int64
+			Name     string
+			Category string
+			Duration int
+			Price    float64
+		}
+		if err := rows.Scan(&service.ID, &service.Name, &service.Category, &service.Duration, &service.Price); err != nil {
 			continue
 		}
+		servicesByCategory[service.Category] = append(servicesByCategory[service.Category], struct {
+			ID       int64
+			Name     string
+			Duration int
+			Price    float64
+		}{
+			ID:       service.ID,
+			Name:     service.Name,
+			Duration: service.Duration,
+			Price:    service.Price,
+		})
+	}
 
-		if category != currentCategory {
-			if currentCategory != "" {
-				services = append(services, "")
-			}
-			services = append(services, fmt.Sprintf("*%s*:", category))
-			currentCategory = category
+	// Создаем сообщение с услугами
+	var text strings.Builder
+	text.WriteString("Доступные услуги:\n\n")
+
+	for category, services := range servicesByCategory {
+		text.WriteString(fmt.Sprintf("📌 %s:\n", category))
+		for _, service := range services {
+			text.WriteString(fmt.Sprintf("• %s (%d мин.) - %.2f ₽\n", service.Name, service.Duration, service.Price))
 		}
-
-		services = append(services, fmt.Sprintf("• %s\n  Длительность: %d мин.\n  Цена: %.2f ₽", name, duration, price))
+		text.WriteString("\n")
 	}
 
-	if len(services) == 0 {
-		msg := tgbotapi.NewMessage(chatID, "Список услуг пуст")
-		bot.Send(msg)
-		return
+	// Создаем клавиатуру с кнопками для каждой услуги
+	var keyboard [][]tgbotapi.InlineKeyboardButton
+	for category, services := range servicesByCategory {
+		// Добавляем заголовок категории
+		keyboard = append(keyboard, []tgbotapi.InlineKeyboardButton{
+			{
+				Text:         category,
+				CallbackData: &category,
+			},
+		})
+
+		// Добавляем кнопки для каждой услуги
+		for _, service := range services {
+			callbackData := fmt.Sprintf("service_%d", service.ID)
+			keyboard = append(keyboard, []tgbotapi.InlineKeyboardButton{
+				{
+					Text:         fmt.Sprintf("%s - %.2f ₽", service.Name, service.Price),
+					CallbackData: &callbackData,
+				},
+			})
+		}
 	}
 
-	msg := tgbotapi.NewMessage(chatID, strings.Join(services, "\n"))
-	msg.ParseMode = "Markdown"
+	msg := tgbotapi.NewMessage(chatID, text.String())
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(keyboard...)
 	bot.Send(msg)
 }
 
