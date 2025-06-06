@@ -18,13 +18,14 @@ func init() {
 
 func ProcessBotUpdates(bot *tgbotapi.BotAPI, updates tgbotapi.UpdatesChannel, db *sql.DB) {
 	for update := range updates {
-		if update.Message == nil && update.CallbackQuery == nil {
-			continue
-		}
-
 		// Обрабатываем callback queries
 		if update.CallbackQuery != nil {
 			handleCallbackQuery(bot, update.CallbackQuery, db)
+			continue
+		}
+
+		// Пропускаем обновления без сообщений
+		if update.Message == nil {
 			continue
 		}
 
@@ -100,6 +101,10 @@ func handleCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message, db *sql.DB, 
 }
 
 func handleTextMessage(update tgbotapi.Update, bot *tgbotapi.BotAPI, db *sql.DB) {
+	if update.Message == nil {
+		return
+	}
+
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
 
 	// Получаем состояние пользователя
@@ -195,6 +200,11 @@ func handleTextMessage(update tgbotapi.Update, bot *tgbotapi.BotAPI, db *sql.DB)
 }
 
 func handleCallbackQuery(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery, db *sql.DB) {
+	if callback == nil || callback.Data == "" {
+		log.Printf("Invalid callback query received")
+		return
+	}
+
 	// Обрабатываем callback в зависимости от его типа
 	switch {
 	case strings.HasPrefix(callback.Data, "service_"):
@@ -244,6 +254,11 @@ func handleCallbackQuery(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery,
 		// Пользователь отменил запись
 		bookingID := strings.TrimPrefix(callback.Data, "cancel_")
 		cancelBooking(bot, callback.Message.Chat.ID, bookingID, db)
+
+	default:
+		// Неизвестный тип callback
+		callbackConfig := tgbotapi.NewCallback(callback.ID, "Неизвестная команда")
+		bot.Request(callbackConfig)
 	}
 
 	// Отвечаем на callback query
@@ -283,6 +298,7 @@ func showServices(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB) {
 			Price    float64
 		}
 		if err := rows.Scan(&service.ID, &service.Name, &service.Category, &service.Duration, &service.Price); err != nil {
+			log.Printf("Error scanning service: %v", err)
 			continue
 		}
 		servicesByCategory[service.Category] = append(servicesByCategory[service.Category], struct {
@@ -296,6 +312,13 @@ func showServices(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB) {
 			Duration: service.Duration,
 			Price:    service.Price,
 		})
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("Error iterating services: %v", err)
+		msg := tgbotapi.NewMessage(chatID, "Произошла ошибка при получении списка услуг. Попробуйте позже.")
+		bot.Send(msg)
+		return
 	}
 
 	// Создаем сообщение с услугами
@@ -312,15 +335,7 @@ func showServices(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB) {
 
 	// Создаем клавиатуру с кнопками для каждой услуги
 	var keyboard [][]tgbotapi.InlineKeyboardButton
-	for category, services := range servicesByCategory {
-		// Добавляем заголовок категории
-		keyboard = append(keyboard, []tgbotapi.InlineKeyboardButton{
-			{
-				Text:         category,
-				CallbackData: &category,
-			},
-		})
-
+	for _, services := range servicesByCategory {
 		// Добавляем кнопки для каждой услуги
 		for _, service := range services {
 			callbackData := fmt.Sprintf("service_%d", service.ID)
@@ -335,7 +350,9 @@ func showServices(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB) {
 
 	msg := tgbotapi.NewMessage(chatID, text.String())
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(keyboard...)
-	bot.Send(msg)
+	if _, err := bot.Send(msg); err != nil {
+		log.Printf("Error sending services message: %v", err)
+	}
 }
 
 func showUserBookings(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB, userID int64) {
