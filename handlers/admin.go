@@ -499,7 +499,7 @@ func AdminServicesHandler(db *sql.DB) gin.HandlerFunc {
 				}
 			}
 
-			c.HTML(http.StatusOK, "services.html", gin.H{
+			c.HTML(http.StatusOK, "admin_services.html", gin.H{
 				"services": services,
 			})
 			return
@@ -512,7 +512,7 @@ func AdminServicesHandler(db *sql.DB) gin.HandlerFunc {
 		price := c.PostForm("price")
 
 		if name == "" || category == "" || duration == "" || price == "" {
-			c.HTML(http.StatusBadRequest, "services.html", gin.H{
+			c.HTML(http.StatusBadRequest, "admin_services.html", gin.H{
 				"error": "Все поля должны быть заполнены",
 			})
 			return
@@ -524,7 +524,7 @@ func AdminServicesHandler(db *sql.DB) gin.HandlerFunc {
 		`, name, category, duration, price)
 
 		if err != nil {
-			c.HTML(http.StatusInternalServerError, "services.html", gin.H{
+			c.HTML(http.StatusInternalServerError, "admin_services.html", gin.H{
 				"error": "Ошибка при добавлении услуги",
 			})
 			return
@@ -560,7 +560,7 @@ func AdminEditServiceHandler(db *sql.DB) gin.HandlerFunc {
 				return
 			}
 
-			c.HTML(http.StatusOK, "edit_service.html", gin.H{
+			c.HTML(http.StatusOK, "admin_edit_service.html", gin.H{
 				"service": service,
 			})
 			return
@@ -573,7 +573,7 @@ func AdminEditServiceHandler(db *sql.DB) gin.HandlerFunc {
 		price := c.PostForm("price")
 
 		if name == "" || category == "" || duration == "" || price == "" {
-			c.HTML(http.StatusBadRequest, "edit_service.html", gin.H{
+			c.HTML(http.StatusBadRequest, "admin_edit_service.html", gin.H{
 				"error": "Все поля должны быть заполнены",
 			})
 			return
@@ -586,7 +586,7 @@ func AdminEditServiceHandler(db *sql.DB) gin.HandlerFunc {
 		`, name, category, duration, price, id)
 
 		if err != nil {
-			c.HTML(http.StatusInternalServerError, "edit_service.html", gin.H{
+			c.HTML(http.StatusInternalServerError, "admin_edit_service.html", gin.H{
 				"error": "Ошибка при обновлении услуги",
 			})
 			return
