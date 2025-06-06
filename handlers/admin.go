@@ -346,6 +346,8 @@ func AdminLoginHandler() gin.HandlerFunc {
 		username := c.PostForm("username")
 		password := c.PostForm("password")
 
+		fmt.Printf("Login attempt: username=%s, password=%s\n", username, password)
+
 		if username == "admin" && password == "admin" {
 			session := sessions.Default(c)
 			session.Set("authenticated", true)
