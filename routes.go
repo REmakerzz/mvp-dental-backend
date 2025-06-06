@@ -3,6 +3,8 @@ package main
 import (
 	"database/sql"
 
+	"MVP_ChatBot/handlers"
+
 	"github.com/gin-gonic/gin"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -14,42 +16,42 @@ func setupRoutes(r *gin.Engine, db *sql.DB, bot *tgbotapi.BotAPI) {
 	})
 
 	// Админка
-	r.GET("/admin/login", adminLoginHandler())
-	r.POST("/admin/login", adminLoginHandler())
-	r.GET("/admin/logout", adminLogoutHandler())
+	r.GET("/admin/login", handlers.AdminLoginHandler())
+	r.POST("/admin/login", handlers.AdminLoginHandler())
+	r.GET("/admin/logout", handlers.AdminLogoutHandler())
 
 	// Защищенные маршруты
 	admin := r.Group("/admin")
-	admin.Use(adminAuthMiddleware())
+	admin.Use(handlers.AdminAuthMiddleware())
 	{
 		// Бронирования
-		admin.GET("/bookings", adminBookingsHandler(db))
-		admin.POST("/bookings/delete/:id", adminDeleteBookingHandler(db, bot))
+		admin.GET("/bookings", handlers.AdminBookingsHandler(db))
+		admin.POST("/bookings/delete/:id", handlers.AdminDeleteBookingHandler(db, bot))
 
 		// Услуги
-		admin.GET("/services", adminServicesHandler(db))
-		admin.POST("/services", adminServicesHandler(db))
-		admin.GET("/services/edit/:id", adminEditServiceHandler(db))
-		admin.POST("/services/edit/:id", adminEditServiceHandler(db))
-		admin.POST("/services/delete/:id", adminDeleteServiceHandler(db))
-		admin.GET("/export_pdf", adminExportPDFHandler(db))
+		admin.GET("/services", handlers.AdminServicesHandler(db))
+		admin.POST("/services", handlers.AdminServicesHandler(db))
+		admin.GET("/services/edit/:id", handlers.AdminEditServiceHandler(db))
+		admin.POST("/services/edit/:id", handlers.AdminEditServiceHandler(db))
+		admin.POST("/services/delete/:id", handlers.AdminDeleteServiceHandler(db))
+		admin.GET("/export_pdf", handlers.AdminExportPDFHandler(db))
 
 		// Врачи
-		admin.GET("/doctors", adminDoctorsHandler(db))
-		admin.POST("/doctors", adminDoctorsHandler(db))
-		admin.GET("/doctors/edit/:doctor_id", adminEditDoctorHandler(db))
-		admin.POST("/doctors/edit/:doctor_id", adminEditDoctorHandler(db))
-		admin.POST("/doctors/delete/:doctor_id", adminDeleteDoctorHandler(db))
-		admin.GET("/doctors/:doctor_id/schedule", adminDoctorScheduleHandler(db))
-		admin.POST("/doctors/:doctor_id/schedule", adminDoctorScheduleHandler(db))
-		admin.POST("/doctors/:doctor_id/schedule/delete/:schedule_id", adminDeleteScheduleHandler(db))
+		admin.GET("/doctors", handlers.AdminDoctorsHandler(db))
+		admin.POST("/doctors", handlers.AdminDoctorsHandler(db))
+		admin.GET("/doctors/edit/:doctor_id", handlers.AdminEditDoctorHandler(db))
+		admin.POST("/doctors/edit/:doctor_id", handlers.AdminEditDoctorHandler(db))
+		admin.POST("/doctors/delete/:doctor_id", handlers.AdminDeleteDoctorHandler(db))
+		admin.GET("/doctors/:doctor_id/schedule", handlers.AdminDoctorScheduleHandler(db))
+		admin.POST("/doctors/:doctor_id/schedule", handlers.AdminDoctorScheduleHandler(db))
+		admin.POST("/doctors/:doctor_id/schedule/delete/:schedule_id", handlers.AdminDeleteScheduleHandler(db))
 	}
 
 	// Публичный API
 	api := r.Group("/api")
 	{
-		api.GET("/services", getServicesHandler(db))
-		api.GET("/available_dates", getAvailableDatesHandler(db))
-		api.GET("/available_times", getAvailableTimesHandler(db))
+		api.GET("/services", handlers.GetServicesHandler(db))
+		api.GET("/available_dates", handlers.GetAvailableDatesHandler(db))
+		api.GET("/available_times", handlers.GetAvailableTimesHandler(db))
 	}
 }
